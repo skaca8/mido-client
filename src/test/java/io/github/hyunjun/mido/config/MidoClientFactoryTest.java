@@ -7,7 +7,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
@@ -25,7 +24,7 @@ class MidoClientFactoryTest {
         // Test channel configuration
         MidoClientProperties.ChannelConfig channelConfig = new MidoClientProperties.ChannelConfig();
         channelConfig.setTitle("Test Channel");
-        channelConfig.setCharset(StandardCharsets.UTF_8);
+        channelConfig.setCharset("UTF-8");
 
         // First endpoint
         MidoClientProperties.EndpointConfig firstEndpoint = new MidoClientProperties.EndpointConfig();
@@ -59,7 +58,7 @@ class MidoClientFactoryTest {
 
         channelConfig.setSecond(secondEndpoint);
 
-        properties.put("test", channelConfig);
+        properties.getChannels().put("test", channelConfig);
 
         factory = new MidoClientFactory(properties);
     }
@@ -125,7 +124,7 @@ class MidoClientFactoryTest {
         MidoClientProperties.EndpointConfig firstEndpoint = new MidoClientProperties.EndpointConfig();
         firstEndpoint.setUrl("https://single.test.com");
         channelConfig.setFirst(firstEndpoint);
-        properties.put("single", channelConfig);
+        properties.getChannels().put("single", channelConfig);
 
         // When
         RestClient client = factory.getOrCreateClient("single", EndpointType.SECOND);

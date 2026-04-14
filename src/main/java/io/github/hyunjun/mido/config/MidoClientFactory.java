@@ -16,10 +16,7 @@ import org.springframework.web.client.RestClient;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -28,7 +25,7 @@ public class MidoClientFactory {
 
     private final MidoClientProperties midoClientProperties;
 
-    private final java.util.Map<String, RestClient> clientCache = new ConcurrentHashMap<>();
+    private final Map<String, RestClient> clientCache = new ConcurrentHashMap<>();
 
     public RestClient.Builder baseRestClient(String baseUrl, MidoClientProperties.EndpointConfig endpointConfig, Charset charset) {
         BufferingClientHttpRequestFactory requestFactory = createRequestFactory(
@@ -67,7 +64,8 @@ public class MidoClientFactory {
                 throw new IllegalArgumentException("URL is not configured for channel: " + channelName + ", type: " + configType);
             }
 
-            Charset charset = channelConfig.getCharset() != null ? channelConfig.getCharset() : StandardCharsets.UTF_8;
+            Charset charset = channelConfig.getCharset() != null ?
+                Charset.forName(channelConfig.getCharset()) : StandardCharsets.UTF_8;
 
             return baseRestClient(
                     endpointConfig.getUrl(),

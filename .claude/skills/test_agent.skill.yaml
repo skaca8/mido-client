@@ -1,0 +1,68 @@
+name: "TestAgent"
+description: "테스트"
+
+instructions: |
+  # 테스트 기본 원칙
+  - Spring Boot 환경에서 **Mock 최소화**, **실제 Bean 주입**을 원칙으로 함
+  - MyBatis 기반 프로젝트 특성 반영한 테스트 설계
+  - JUnit5 표준(@Test, @BeforeEach, @AfterEach) 기반으로 작성
+  - 테스트 클래스명은 `*Test`, 메서드명은 시나리오를 설명하도록 작성
+      - 예시: `shouldFindAlpensiaBookingSuccessfully`, `shouldThrowExceptionWhenInvalidData`
+  - Given-When-Then 주석 구조 유지 (가독성 확보 목적)
+
+  # 테스트 어노테이션 가이드
+  ## Repository 테스트 (@MybatisTest)
+  - MyBatis 매퍼 인터페이스 테스트용
+  - 기본 패턴:
+    ```java
+    @MybatisTest
+    @ContextConfiguration(classes = DomainTestApplication.class)
+    @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+    @ActiveProfiles({"domain", "domain-local"})
+    ```
+  - 실제 데이터베이스 연동 테스트 (H2/TestContainers 활용)
+
+  ## Service 테스트 (@SpringBootTest)
+  - 전체 Spring 컨텍스트 로드
+  - 기본 패턴: BaseIntegrationTest 상속
+    ```java
+    @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+    @ActiveProfiles("local")
+    @TestPropertySource(locations = {...})
+    ```
+  - @Transactional로 데이터 롤백 보장
+
+  ## Controller 테스트
+  - @SpringBootTest + @AutoConfigureMockMvc 조합
+  - MockMvc를 통한 HTTP 요청/응답 검증
+
+  # 테스트 설계 원칙
+  - **실제 서비스/리포지토리 DI**를 통해 실제 동작 시나리오 검증
+  - 외부 API(알펜시아, 소노 등)는 TestConfiguration으로 Mock 대체
+  - 단순 유닛 테스트보다 **엔드투엔드 흐름 검증**을 우선시함
+  - 빈 테스트 메서드 구현 금지 - 실제 검증 로직 필수
+
+  # 데이터베이스 테스트 전략
+  - MyBatis XML 매퍼와 Repository 인터페이스 연동 검증
+  - 복잡한 쿼리(조인, 서브쿼리)는 실제 데이터로 테스트
+  - @Sql 어노테이션으로 테스트 데이터 사전 준비
+  - 트랜잭션 롤백으로 테스트 격리 보장
+
+  # 코드 품질
+  - 불필요한 assert, verify 호출 지양 (목적이 명확한 검증만 유지)
+  - 테스트 실패 시 원인 파악이 명확해야 함 (assert message 필수)
+  - Assertions.assertNotNull() 보다 구체적인 검증 우선
+      - 예시: `assertThat(result).hasSize(5)`, `assertThat(booking.getStatus()).isEqualTo("CONFIRMED")`
+  - CI 환경에서도 독립적으로 동작하도록 profile=test 설정 반영
+
+  # 테스트 커버리지 목표
+  - 핵심 비즈니스 로직: 90% 이상
+  - Repository 계층: 80% 이상
+  - Controller 계층: 70% 이상
+  - 예외 상황, 경계값 테스트 포함
+
+  # 예시 케이스
+  - 알펜시아 예약 처리: API 호출 → DB 저장 → 상태 업데이트 전체 플로우
+  - Repository 테스트: MyBatis 매퍼 쿼리 정확성 검증
+  - Service 테스트: 비즈니스 로직 + 트랜잭션 경계 검증
+  - Controller 테스트: 요청/응답 검증 + 예외 처리

@@ -1,0 +1,12 @@
+name: "DevAgent"
+description: "개발"
+instructions: |
+  - CLAUDE.md의 모든 규칙을 우선적으로 준수할 것
+  - 코드는 항상 Spring 표준 패턴에 맞춰 리팩터링
+  - 불필요한 변경은 하지 않으며, 작동 중인 코드를 함부로 수정하지 않음
+  - 새 코드 작성 시, 기존 코드베이스의 구조/포맷/네이밍을 우선 확인
+  - 코드 변경 전 항상 '계획 > 승인 > 실행' 순서로 제안
+  - Lombok, Mapper, Repository 등 기존 패턴을 반드시 일관성 있게 유지
+  - SonarLint 및 IntelliJ 경고가 없는 상태로 유지
+  - "Spring-first”, "No Guessing”, "Check Existing Content” 원칙을 철저히 지킬 것
+  - Clean Code를 기준으로 작성하되, 다른 개발자가 이해하기 쉽도록 가독성을 우선시 한다.

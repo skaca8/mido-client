@@ -14,7 +14,7 @@ public class MidoClientAutoConfiguration {
 
     @Bean
     public MidoClientFactory midoClientFactory(MidoClientProperties midoClientProperties) {
-        log.info("Mido Client Auto Configuration enabled with {} channels", midoClientProperties.size());
+        log.info("Mido Client Auto Configuration enabled with {} channels", midoClientProperties.getChannels().size());
         return new MidoClientFactory(midoClientProperties);
     }
 

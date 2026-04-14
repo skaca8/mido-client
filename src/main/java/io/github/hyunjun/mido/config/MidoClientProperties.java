@@ -9,18 +9,19 @@ import lombok.Setter;
 import lombok.experimental.FieldDefaults;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Getter
 @Setter
 @FieldDefaults(level = AccessLevel.PRIVATE)
 @ConfigurationProperties(prefix = "mido-client")
-public class MidoClientProperties extends HashMap<String, MidoClientProperties.ChannelConfig> {
+public class MidoClientProperties {
 
     Boolean enabled = false;
+
+    Map<String, ChannelConfig> channels = new HashMap<>();
 
     @Getter
     @Setter
@@ -30,7 +31,7 @@ public class MidoClientProperties extends HashMap<String, MidoClientProperties.C
 
         String title;
 
-        Charset charset = StandardCharsets.UTF_8;
+        String charset = "UTF-8";
 
         EndpointConfig first;
 
@@ -87,8 +88,8 @@ public class MidoClientProperties extends HashMap<String, MidoClientProperties.C
     }
 
     public ChannelConfig getChannelConfig(String channelName) {
-        if (this.containsKey(channelName)) {
-            return this.get(channelName);
+        if (channels.containsKey(channelName)) {
+            return channels.get(channelName);
         }
         throw new IllegalArgumentException("Unknown Channel: " + channelName);
     }

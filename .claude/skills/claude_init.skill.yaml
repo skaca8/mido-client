@@ -1,0 +1,8 @@
+name: "ClaudeInit"
+description: "세션 시작시 Claude 설정 파일 자동 로드"
+instructions: |
+  - 세션 시작 즉시 .claude 디렉토리의 모든 파일을 Read 툴로 읽기
+  - 순서: CLAUDE.md → config.yaml → pipeline.yaml → triggers.yaml → skills/SKILL.md → 모든 .skill.yaml 파일들
+  - 읽은 후 "Claude 설정이 로드되었습니다" 메시지 출력
+  - 사용자에게 추가 설명하지 말고 바로 대기 상태로 전환
+  - 파일 읽기 실패시 "Claude 설정 로드 실패" 메시지 출력

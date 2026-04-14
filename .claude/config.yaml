@@ -1,0 +1,104 @@
+version: 1
+project:
+  name: stay-hub
+  pipeline: stay-hub-pipeline
+
+default_skill: dev_agent
+language: ko
+
+context:
+  include:
+    - ./src/main/java
+    - ./src/test/java
+    - ./pom.xml
+    - ./build.gradle
+    - ./.claude/CLAUDE.md
+    - ./.claude/config.yaml
+    - ./.claude/pipeline.yaml
+    - ./.claude/triggers.yaml
+    - ./.claude/settings.local.json
+    - ./.claude/skills/SKILL.md
+    - ./.claude/skills/claude_init.skill.yaml
+    - ./.claude/skills/dev_agent.skill.yaml
+    - ./.claude/skills/quality_agent.skill.yaml
+    - ./.claude/skills/security_agent.skill.yaml
+    - ./.claude/skills/test_agent.skill.yaml
+  exclude:
+    - ./node_modules
+    - ./build
+    - ./out
+    - ./config
+    - ./.git
+    - ./logs
+    - ./tmp
+    - ./test-output
+    - ./coverage
+
+skills:
+  - name: dev_agent
+    path: skills/dev_agent.skill.yaml
+    triggers:
+      - "@triggers.develop"
+      - "Spring"
+      - "컨벤션"
+      - "구현"
+      - "CLAUDE.md 기준"
+
+  - name: test_agent
+    path: skills/test_agent.skill.yaml
+    triggers:
+      - "@triggers.test"
+      - "JUnit"
+      - "커버리지"
+
+  - name: quality_agent
+    path: skills/quality_agent.skill.yaml
+    triggers:
+      - "@triggers.review"
+      - "SonarLint"
+      - "품질 검증"
+
+  - name: security_agent
+    path: skills/security_agent.skill.yaml
+    triggers:
+      - "@triggers.security"
+      - "인증"
+      - "인가"
+
+workflow:
+  enable_pipeline: true
+  pipeline_path: .claude/pipeline.yaml
+  auto_trigger_on:
+    - "@triggers.develop"
+    - "@triggers.test"
+    - "@triggers.review"
+    - "@triggers.security"
+  mode: sequential
+  stop_on_failure: true
+  notifications:
+    success: "stay-hub pipeline success."
+    failure: "stay-hub pipeline failure."
+
+hooks:
+  on_start:
+    - "claude_init"
+    - "dev_agent"
+  on_pull_request:
+    - "quality_agent"
+  on_test_run:
+    - "test_agent"
+  on_security_scan:
+    - "security_agent"
+  on_pipeline_complete:
+    - "quality_agent"
+    - "security_agent"
+
+logging:
+  level: info
+  output: .claude/logs/claude.log
+  format: "[%(asctime)s] [%(levelname)s] %(message)s"
+
+feedback:
+  ask_before_edit: true
+  show_diff_on_change: true
+  require_confirmation_for_file_write: true

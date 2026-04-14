@@ -2,6 +2,7 @@ package io.github.hyunjun.mido.config;
 
 import io.github.hyunjun.mido.constant.LogLevel;
 import io.github.hyunjun.mido.context.ChannelContext;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
@@ -30,7 +31,7 @@ public class MidoLoggingInterceptor implements ClientHttpRequestInterceptor {
     private static final Logger fileLog = LoggerFactory.getLogger("MidoClientFileLog");
 
     @Override
-    public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution) throws IOException {
+    public ClientHttpResponse intercept(HttpRequest request, byte @NonNull [] body, ClientHttpRequestExecution execution) throws IOException {
         long startTime = System.currentTimeMillis();
         logRequest(request, body, logLevel);
 

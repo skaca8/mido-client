@@ -1,0 +1,77 @@
+version: 1
+name: stay-hub-pipeline
+description: >
+  Stay-Hub 팀의 Spring Boot 기반 프로젝트용 통합 개발 파이프라인.
+  dev_agent → test_agent → quality_agent → security_agent 순서로 실행됨.
+
+stages:
+  - name: development
+    description: "기능 개발 및 리팩터링"
+    skill: dev_agent
+    tasks:
+      - "요청된 기능을 Spring-First 기준으로 개발"
+      - "리팩터링 및 컨벤션 점검"
+      - "CLAUDE.md 규칙에 따라 구현 계획 제시 후 코드 작성"
+    on_success:
+      - trigger: testing
+    on_failure:
+      - message: "dev_agent failure."
+
+  - name: testing
+    description: "테스트 코드 작성 및 실행"
+    skill: test_agent
+    tasks:
+      - "JUnit 기반 단위 테스트 작성"
+      - "Mockito 또는 Testcontainers 활용 검증"
+      - "커버리지 80% 이상 목표"
+      - "빌드 실행 및 테스트 통과 확인"
+    on_success:
+      - trigger: quality
+    on_failure:
+      - message: "test_agent failure."
+
+  - name: quality
+    description: "품질 검증 및 코드 리뷰"
+    skill: quality_agent
+    tasks:
+      - "SonarLint, IntelliJ 경고, 코드 스멜 점검"
+      - "리팩터링 권장사항 요약 및 제안"
+      - "팀 컨벤션 불일치 코드 식별"
+    on_success:
+      - trigger: security
+    on_failure:
+      - message: "quality_agent failure."
+
+  - name: security
+    description: "보안 점검 및 취약성 검증"
+    skill: security_agent
+    tasks:
+      - "Spring Security 설정 검증"
+      - "입력값 검증(XSS, SQL Injection 등) 검사"
+      - "취약점 발견 시 개선 가이드 제시"
+    on_success:
+      - message: "security_agent success."
+    on_failure:
+      - message: "security_agent failure."
+
+rules:
+  stop_on_failure: true
+  require_approval_before_next_stage: true
+  logging:
+    level: info
+    output: .claude/logs/pipeline.log
+    format: "[%(asctime)s] [%(levelname)s] %(message)s"
+  notifications:
+    on_start: "stay-hub pipeline start."
+    on_complete: "stay-hub pipeline success."
+    on_failure: "tay-hub pipeline failure."
+
+# ===================================
+# Metadata
+# ===================================
+metadata:
+  author: "Hyunjun"
+  team: "Stay-Hub Backend"
+  created: "2025-11-04"
+  updated: "2025-11-04"
+  version_tag: "v1.0.0"
