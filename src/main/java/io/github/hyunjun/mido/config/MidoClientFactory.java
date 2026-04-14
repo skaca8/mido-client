@@ -47,10 +47,7 @@ public class MidoClientFactory {
     }
 
     public RestClient getOrCreateClient(String channelName, EndpointType endpointType) {
-        if (endpointType != EndpointType.SECOND) {
-            throw new IllegalArgumentException("Only SECOND EndpointType is supported for multi-endpoint channels");
-        }
-        String cacheKey = channelName.toLowerCase() + "-second";
+        String cacheKey = channelName.toLowerCase() + "-" + endpointType.getValue();
         return clientCache.computeIfAbsent(cacheKey, k -> createClient(channelName, endpointType));
     }
 
@@ -60,7 +57,7 @@ public class MidoClientFactory {
             MidoClientProperties.EndpointConfig endpointConfig = getEndpointConfig(channelConfig, endpointType);
 
             if (endpointConfig == null || endpointConfig.getUrl() == null || endpointConfig.getUrl().trim().isEmpty()) {
-                String configType = endpointType == null ? "first" : "second";
+                String configType = endpointType != null ? endpointType.getValue() : "first";
                 throw new IllegalArgumentException("URL is not configured for channel: " + channelName + ", type: " + configType);
             }
 
@@ -73,13 +70,13 @@ public class MidoClientFactory {
                     charset
             ).build();
         } catch (Exception e) {
-            String configType = endpointType == null ? "first" : "second";
+            String configType = endpointType != null ? endpointType.getValue() : "first";
             throw new IllegalStateException("Cannot create RestClient for Channel: " + channelName + ", type: " + configType, e);
         }
     }
 
     private MidoClientProperties.EndpointConfig getEndpointConfig(MidoClientProperties.ChannelConfig channelConfig, EndpointType endpointType) {
-        if (endpointType == null) {
+        if (endpointType == null || endpointType == EndpointType.FIRST) {
             return channelConfig.getFirst();
         } else if (endpointType == EndpointType.SECOND) {
             MidoClientProperties.EndpointConfig secondConfig = channelConfig.getSecond();

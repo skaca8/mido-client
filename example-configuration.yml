@@ -10,12 +10,12 @@ mido-client:
       charset: UTF-8
       first:
         title: "Auth API"
-        url: https://auth.allmytour.com
+        url: https://auth.skaca8.com
         read-timeout-seconds: 60
         connect-timeout-seconds: 3
         authorization:
           type: bearer
-          token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJiaXphbGxteXRvdXJfYXBpXzEiLCJpYXQiOjE3NjU0MTA1MTMsImV4cCI6MjUzNDAyMjY4Mzk5fQ._Y3aw24YeWwItl5S8h2cVd9C9aUBw8y0aJuHqyobWzQ
+          token: eyJhbGciOiJIUzI1NiJ2.eyJzdWIiOiJiaXphbGxteXRvdXJfYXBpXzEiLCJpYXQiOjE3NjU0MTA1MTMsImV4cCI6MjUzNDAyMjY4Mzk5fQ._Y3aw24YeWwItl5S8h2cVd9C9aUBw8y0aJuHqyobWzQ
         headers:
           - name: X-AUTH-TOKEN
             value: custom-token-value
@@ -27,7 +27,7 @@ mido-client:
       charset: UTF-8
       first:
         title: "결제 조회 서버"
-        url: https://payment.allmytour.com
+        url: https://payment.skaca8.com
         read-timeout-seconds: 30
         connect-timeout-seconds: 5
         authorization:
@@ -36,7 +36,7 @@ mido-client:
         log: all
       second:
         title: "결제 저장 서버"
-        url: https://payment-save.allmytour.com
+        url: https://payment-save.skaca8.com
         read-timeout-seconds: 120
         connect-timeout-seconds: 3
         authorization:

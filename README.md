@@ -175,7 +175,7 @@ Log format includes:
 
 ## Requirements
 
-- Java 21+
+- Java 17+
 - Spring Boot 3.2+ (RestClient minimum version)
 - Spring Framework 6.1+ (RestClient support)
 

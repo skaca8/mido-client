@@ -9,7 +9,6 @@ import io.github.hyunjun.mido.sample.PaymentService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.web.client.RestClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,46 +16,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Mido Client 통합 테스트
  * 실제 Spring 컨텍스트에서 모든 컴포넌트가 올바르게 동작하는지 확인
+ * 설정은 src/test/resources/application.yml에서 자동 로드됨
  */
 @SpringBootTest(classes = {
         MidoClientAutoConfiguration.class,
         PaymentService.class,
         AuthService.class,
         NotificationService.class
-})
-@TestPropertySource(properties = {
-        "mido-client.enabled=true",
-
-        // Payment 채널 설정 (dual endpoint)
-        "mido-client.channels.payment.title=Payment Service",
-        "mido-client.channels.payment.charset=UTF-8",
-        "mido-client.channels.payment.first.url=https://api.payment.com",
-        "mido-client.channels.payment.first.read-timeout-seconds=30",
-        "mido-client.channels.payment.first.connect-timeout-seconds=5",
-        "mido-client.channels.payment.first.log=console",
-        "mido-client.channels.payment.first.authorization.type=bearer",
-        "mido-client.channels.payment.first.authorization.token=payment-query-token",
-        "mido-client.channels.payment.second.url=https://process.payment.com",
-        "mido-client.channels.payment.second.read-timeout-seconds=60",
-        "mido-client.channels.payment.second.connect-timeout-seconds=3",
-        "mido-client.channels.payment.second.log=all",
-        "mido-client.channels.payment.second.authorization.type=bearer",
-        "mido-client.channels.payment.second.authorization.token=payment-process-token",
-
-        // Auth 채널 설정 (single endpoint)
-        "mido-client.channels.auth.title=Authentication Service",
-        "mido-client.channels.auth.first.url=https://auth.example.com",
-        "mido-client.channels.auth.first.authorization.type=bearer",
-        "mido-client.channels.auth.first.authorization.token=auth-service-token",
-        "mido-client.channels.auth.first.headers[0].name=X-API-Version",
-        "mido-client.channels.auth.first.headers[0].value=v1",
-
-        // Notification 채널 설정 (webhook)
-        "mido-client.channels.notification.title=Notification Service",
-        "mido-client.channels.notification.first.url=https://hooks.slack.com/services/TEST/WEBHOOK/URL",
-        "mido-client.channels.notification.first.read-timeout-seconds=10",
-        "mido-client.channels.notification.first.connect-timeout-seconds=2",
-        "mido-client.channels.notification.first.log=off"
 })
 class MidoClientIntegrationTest {
 

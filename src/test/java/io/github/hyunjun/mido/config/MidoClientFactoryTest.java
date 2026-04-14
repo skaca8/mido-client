@@ -110,11 +110,14 @@ class MidoClientFactoryTest {
     }
 
     @Test
-    void shouldThrowExceptionForUnsupportedEndpointType() {
-        // When & Then
-        assertThatThrownBy(() -> factory.getOrCreateClient("test", EndpointType.FIRST))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Only SECOND EndpointType is supported for multi-endpoint channels");
+    void shouldCreateFirstEndpointClientWithExplicitEndpointType() {
+        // When
+        RestClient clientImplicit = factory.getOrCreateClient("test");
+        RestClient clientExplicit = factory.getOrCreateClient("test", EndpointType.FIRST);
+
+        // Then - same cache key ("test-first"), so same cached instance
+        assertThat(clientExplicit).isNotNull();
+        assertThat(clientImplicit).isSameAs(clientExplicit);
     }
 
     @Test

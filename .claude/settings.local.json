@@ -104,7 +104,12 @@
       "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew compileJava --stacktrace)",
       "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew test --info)",
       "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew test --tests SimpleTest)",
-      "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew jar)"
+      "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew jar)",
+      "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew test --tests \"io.github.hyunjun.mido.integration.MidoClientIntegrationTest\" --info)",
+      "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew test)",
+      "Bash(cat /Users/hyunjun/IdeaProjects/mido-client/build/test-results/test/*.xml)",
+      "Bash(/Users/hyunjun/IdeaProjects/mido-client/LICENSE:*)",
+      "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew clean test)"
     ],
     "deny": [],
     "ask": []

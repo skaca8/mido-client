@@ -1,0 +1,42 @@
+mido-client:
+  enabled: true
+
+  channels:
+    payment:
+      title: "Payment Service"
+      charset: UTF-8
+      first:
+        url: https://api.payment.com
+        read-timeout-seconds: 30
+        connect-timeout-seconds: 5
+        log: console
+        authorization:
+          type: bearer
+          token: payment-query-token
+      second:
+        url: https://process.payment.com
+        read-timeout-seconds: 60
+        connect-timeout-seconds: 3
+        log: all
+        authorization:
+          type: bearer
+          token: payment-process-token
+
+    auth:
+      title: "Authentication Service"
+      first:
+        url: https://auth.example.com
+        authorization:
+          type: bearer
+          token: auth-service-token
+        headers:
+          - name: X-API-Version
+            value: v1
+
+    notification:
+      title: "Notification Service"
+      first:
+        url: https://hooks.slack.com/services/TEST/WEBHOOK/URL
+        read-timeout-seconds: 10
+        connect-timeout-seconds: 2
+        log: off

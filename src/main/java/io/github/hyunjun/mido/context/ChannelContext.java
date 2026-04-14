@@ -1,9 +1,11 @@
 package io.github.hyunjun.mido.context;
 
+import lombok.experimental.UtilityClass;
 import org.slf4j.MDC;
 
+@UtilityClass
 public class ChannelContext {
-    public static final ThreadLocal<String> CHANNEL_ACTION = new ThreadLocal<>();
+    private static final ThreadLocal<String> CHANNEL_ACTION = new ThreadLocal<>();
 
     private static final String MDC_CHANNEL_ACTION_KEY = "channelAction";
 
