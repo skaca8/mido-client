@@ -1,39 +1,41 @@
 # Spring Mido Client
 
-> **YAML-driven multi-channel RestClient management for Spring Boot 3.2+**
+**[한국어](README.ko.md)** | English
+
+> YAML-driven multi-channel RestClient management for Spring Boot 3.2+
 
 `mido-client` eliminates boilerplate `RestClient` configuration by letting you define multiple external API channels — each with its own URL, auth, timeout, logging, and interceptors — entirely in `application.yml`. No `@Bean` methods, no factory classes, no repeated setup code.
 
 ## Why mido-client?
 
-| | RestClient (vanilla) | OpenFeign | **mido-client** |
+| | RestClient (vanilla) | OpenFeign | mido-client |
 |---|---|---|---|
-| Configuration style | Java `@Bean` | Java interface + annotations | **YAML only** |
-| Multi-channel setup | Manual per bean | Manual per interface | **Built-in** |
-| Dual endpoint per service | Manual | Not supported | **Built-in** |
-| Request/response logging | Manual interceptor | Plugin required | **Built-in (4 levels)** |
-| Client instance caching | Manual | Managed by framework | **Built-in** |
-| Based on Spring Boot 3.2 RestClient | ✅ | ❌ (uses Feign) | ✅ |
+| Configuration style | Java `@Bean` | Java interface + annotations | YAML only |
+| Multi-channel setup | Manual per bean | Manual per interface | Built-in |
+| Dual endpoint per service | Manual | Not supported | Built-in |
+| Request/response logging | Manual interceptor | Plugin required | Built-in (4 levels) |
+| Client instance caching | Manual | Managed by framework | Built-in |
+| Based on Spring Boot 3.2 RestClient | Yes | No (uses Feign) | Yes |
 
 ## Features
 
-- 🚀 **Multi-channel support** — define unlimited external API channels, each with `first` / `second` dual endpoint
-- 🔧 **Automatic client caching** — one `RestClient` instance per channel/endpoint, thread-safe via `ConcurrentHashMap`
-- 📝 **4-level built-in logging** — `off` / `console` / `file` / `all` (console + file simultaneously), includes body, URL, response time
-- 🔒 **Per-endpoint authentication** — Bearer, Basic, API Key
-- 🌍 **Smart charset detection** — Content-Type header → UTF-8 validation → channel default fallback
-- 🔌 **Custom interceptors** — register any `ClientHttpRequestInterceptor` by class name in YAML
-- 🧵 **ChannelContext with MDC** — thread-local channel action tracking, integrated with SLF4J MDC for distributed log tracing
-- ⚙️ **Zero-code Auto-Configuration** — activated with a single `mido-client.enabled: true` property
+- **Multi-channel support** — define unlimited external API channels, each with `first` / `second` dual endpoint
+- **Automatic client caching** — one `RestClient` instance per channel/endpoint, thread-safe via `ConcurrentHashMap`
+- **4-level built-in logging** — `off` / `console` / `file` / `all` (console + file simultaneously), includes body, URL, response time
+- **Per-endpoint authentication** — Bearer, Basic, API Key
+- **Smart charset detection** — Content-Type header → UTF-8 validation → channel default fallback
+- **Custom interceptors** — register any `ClientHttpRequestInterceptor` by class name in YAML
+- **ChannelContext with MDC** — thread-local channel action tracking, integrated with SLF4J MDC for distributed log tracing
+- **Zero-code Auto-Configuration** — activated with a single `mido-client.enabled: true` property
 
 ## Requirements
 
 | Requirement | Minimum Version |
 |---|---|
-| Java | **17** |
-| Spring Boot | **3.2.0** |
-| Spring Framework | **6.1.0** |
-| Gradle | **7.6** |
+| Java | 17 |
+| Spring Boot | 3.2.0 |
+| Spring Framework | 6.1.0 |
+| Gradle | 7.6 |
 
 > Spring Boot 3.2+ is required because `RestClient` was introduced in Spring Framework 6.1 (shipped with Spring Boot 3.2).
 
@@ -229,6 +231,7 @@ try {
 ```
 
 The action key `channelAction` is available in log patterns:
+
 ```xml
 <!-- logback.xml -->
 <pattern>%d [%X{channelAction}] %-5level %msg%n</pattern>
@@ -238,10 +241,10 @@ The action key `channelAction` is available in log patterns:
 
 | Level | Console | File (`MidoClientFileLog`) |
 |---|---|---|
-| `off` | ❌ | ❌ |
-| `console` | ✅ | ❌ |
-| `file` | ❌ | ✅ |
-| `all` | ✅ | ✅ |
+| `off` | - | - |
+| `console` | Yes | - |
+| `file` | - | Yes |
+| `all` | Yes | Yes |
 
 Each log entry includes: channel action, HTTP method, URL, request/response body, response time, HTTP status.
 
