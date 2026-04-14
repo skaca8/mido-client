@@ -129,10 +129,15 @@ mido-client:
 
 ```java
 @Service
-@RequiredArgsConstructor
 public class PaymentService extends BaseExternalApi {
 
-    private final MidoClientFactory midoClientFactory;
+    private final RestClient queryClient;
+    private final RestClient processClient;
+
+    public PaymentService(MidoClientFactory midoClientFactory) {
+        this.queryClient = midoClientFactory.getOrCreateClient("payment");
+        this.processClient = midoClientFactory.getOrCreateClient("payment", EndpointType.SECOND);
+    }
 
     @Override
     protected String getChannelName() {
@@ -140,24 +145,22 @@ public class PaymentService extends BaseExternalApi {
     }
 
     public PaymentStatus getPaymentStatus(String paymentId) {
-        return withDefaultChannelAction("getPaymentStatus", () -> {
-            RestClient client = midoClientFactory.getOrCreateClient("payment");
-            return client.get()
+        return withDefaultChannelAction("getPaymentStatus", () ->
+            queryClient.get()
                 .uri("/payments/{id}/status", paymentId)
                 .retrieve()
-                .body(PaymentStatus.class);
-        });
+                .body(PaymentStatus.class)
+        );
     }
 
     public PaymentResult processPayment(PaymentRequest request) {
-        return withDefaultChannelAction("processPayment", () -> {
-            RestClient client = midoClientFactory.getOrCreateClient("payment", EndpointType.SECOND);
-            return client.post()
+        return withDefaultChannelAction("processPayment", () ->
+            processClient.post()
                 .uri("/payments/process")
                 .body(request)
                 .retrieve()
-                .body(PaymentResult.class);
-        });
+                .body(PaymentResult.class)
+        );
     }
 }
 ```
