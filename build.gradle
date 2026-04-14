@@ -53,6 +53,7 @@ tasks.named('test') {
 jar {
     enabled = true
     archiveClassifier = ''
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 // Spring Boot의 fat jar 생성 비활성화 (라이브러리용)
