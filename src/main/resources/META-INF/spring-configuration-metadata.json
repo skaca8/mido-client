@@ -1,0 +1,100 @@
+{
+  "groups": [
+    {
+      "name": "mido-client",
+      "type": "io.github.hyunjun.mido.config.MidoClientProperties",
+      "sourceType": "io.github.hyunjun.mido.config.MidoClientProperties"
+    }
+  ],
+  "properties": [
+    {
+      "name": "mido-client.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Enable Mido Client auto-configuration",
+      "defaultValue": false
+    },
+    {
+      "name": "mido-client.channels",
+      "type": "java.util.Map<java.lang.String,io.github.hyunjun.mido.config.MidoClientProperties$ChannelConfig>",
+      "description": "Channel configurations for Mido Client"
+    }
+  ],
+  "hints": [
+    {
+      "name": "mido-client.channels.*.first.log",
+      "values": [
+        {
+          "value": "off",
+          "description": "No logging"
+        },
+        {
+          "value": "console",
+          "description": "Log to console only"
+        },
+        {
+          "value": "file",
+          "description": "Log to file only"
+        },
+        {
+          "value": "all",
+          "description": "Log to both console and file"
+        }
+      ]
+    },
+    {
+      "name": "mido-client.channels.*.second.log",
+      "values": [
+        {
+          "value": "off",
+          "description": "No logging"
+        },
+        {
+          "value": "console",
+          "description": "Log to console only"
+        },
+        {
+          "value": "file",
+          "description": "Log to file only"
+        },
+        {
+          "value": "all",
+          "description": "Log to both console and file"
+        }
+      ]
+    },
+    {
+      "name": "mido-client.channels.*.first.authorization.type",
+      "values": [
+        {
+          "value": "bearer",
+          "description": "Bearer token authentication"
+        },
+        {
+          "value": "basic",
+          "description": "Basic authentication"
+        },
+        {
+          "value": "api_key",
+          "description": "API Key authentication"
+        }
+      ]
+    },
+    {
+      "name": "mido-client.channels.*.second.authorization.type",
+      "values": [
+        {
+          "value": "bearer",
+          "description": "Bearer token authentication"
+        },
+        {
+          "value": "basic",
+          "description": "Basic authentication"
+        },
+        {
+          "value": "api_key",
+          "description": "API Key authentication"
+        }
+      ]
+    }
+  ]
+}

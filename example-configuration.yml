@@ -1,0 +1,73 @@
+# Example configuration for Mido Client
+# This shows how to configure the library in your application.yml
+
+mido-client:
+  enabled: true
+  channels:
+    # Authentication service with single endpoint
+    auth:
+      title: "인증 서버"
+      charset: UTF-8
+      first:
+        title: "Auth API"
+        url: https://auth.allmytour.com
+        read-timeout-seconds: 60
+        connect-timeout-seconds: 3
+        authorization:
+          type: bearer
+          token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJiaXphbGxteXRvdXJfYXBpXzEiLCJpYXQiOjE3NjU0MTA1MTMsImV4cCI6MjUzNDAyMjY4Mzk5fQ._Y3aw24YeWwItl5S8h2cVd9C9aUBw8y0aJuHqyobWzQ
+        headers:
+          - name: X-AUTH-TOKEN
+            value: custom-token-value
+        log: console
+
+    # Payment service with dual endpoints
+    payment:
+      title: "결제 서버"
+      charset: UTF-8
+      first:
+        title: "결제 조회 서버"
+        url: https://payment.allmytour.com
+        read-timeout-seconds: 30
+        connect-timeout-seconds: 5
+        authorization:
+          type: bearer
+          token: payment-query-token
+        log: all
+      second:
+        title: "결제 저장 서버"
+        url: https://payment-save.allmytour.com
+        read-timeout-seconds: 120
+        connect-timeout-seconds: 3
+        authorization:
+          type: bearer
+          token: payment-save-token
+        interceptors:
+          - com.example.PaymentInterceptor
+          - com.example.SecurityInterceptor
+        log: file
+
+    # External API with custom charset
+    legacy-system:
+      title: "Legacy System"
+      charset: EUC-KR
+      first:
+        url: https://legacy.example.com
+        authorization:
+          type: basic
+          token: dXNlcm5hbWU6cGFzc3dvcmQ=  # base64 encoded username:password
+        headers:
+          - name: Content-Type
+            value: text/xml; charset=EUC-KR
+          - name: User-Agent
+            value: MyApplication/1.0
+        log: console
+
+    # Simple notification service
+    notification:
+      title: "알림 서비스"
+      first:
+        url: https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+        read-timeout-seconds: 10
+        connect-timeout-seconds: 2
+        log: off  # No logging for webhook calls

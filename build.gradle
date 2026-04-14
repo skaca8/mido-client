@@ -1,0 +1,92 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'org.springframework.boot' version '3.2.4'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'io.github.hyunjun'
+version = '1.0.0-SNAPSHOT'
+java.sourceCompatibility = JavaVersion.VERSION_21
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spring Boot
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-configuration-processor'
+
+    // Validation
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // Jackson
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+
+    // Test
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// 라이브러리로 배포하기 위한 설정
+jar {
+    enabled = true
+    archiveClassifier = ''
+}
+
+// Spring Boot의 fat jar 생성 비활성화 (라이브러리용)
+bootJar {
+    enabled = false
+}
+
+publishing {
+    publications {
+        create('maven', MavenPublication) {
+            from components.java
+
+            pom {
+                name = 'Spring Mido Client'
+                description = 'A Spring Boot starter for multi-channel REST client management'
+                url = 'https://github.com/skaca8/mido-client'
+
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'hyunjun'
+                        name = 'Hyunjun'
+                        email = 'skaca8@naver.com'
+                    }
+                }
+
+                scm {
+                    connection = 'scm:git:git://github.com/skaca8/mido-client.git'
+                    developerConnection = 'scm:git:ssh://github.com/skaca8/mido-client.git'
+                    url = 'https://github.com/skaca8/mido-client/tree/main'
+                }
+            }
+        }
+    }
+}
