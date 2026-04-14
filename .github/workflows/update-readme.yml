@@ -1,0 +1,35 @@
+name: Sync README Version
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'build.gradle'
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Update README versions
+        run: ./gradlew updateReadmeVersion
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git diff --quiet && echo "No changes to commit" && exit 0
+          git add README.md README.ko.md
+          git commit -m "chore: sync README version [skip ci]"
+          git push

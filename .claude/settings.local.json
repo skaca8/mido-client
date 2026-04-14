@@ -109,7 +109,17 @@
       "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew test)",
       "Bash(cat /Users/hyunjun/IdeaProjects/mido-client/build/test-results/test/*.xml)",
       "Bash(/Users/hyunjun/IdeaProjects/mido-client/LICENSE:*)",
-      "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew clean test)"
+      "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew clean test)",
+      "Bash(git tag:*)",
+      "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew test --tests \"io.github.hyunjun.mido.integration.JsonPlaceholderIntegrationTest\" --info)",
+      "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew test --tests \"io.github.hyunjun.mido.integration.JsonPlaceholderIntegrationTest\")",
+      "Bash(rm /Users/hyunjun/IdeaProjects/mido-client/src/test/java/io/github/hyunjun/mido/SimpleTest.java)",
+      "Bash(rm /Users/hyunjun/IdeaProjects/mido-client/src/test/java/io/github/hyunjun/mido/integration/MidoClientIntegrationTest.java)",
+      "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew clean)",
+      "WebFetch(domain:jitpack.io)",
+      "Bash(curl -s \"https://jitpack.io/com/github/skaca8/mido-client/1.0.1/mido-client-1.0.1.pom\" -o /dev/null -w \"%{http_code}\")",
+      "Bash(curl -s \"https://jitpack.io/com/github/skaca8/mido-client/1.0.1/build.log\")",
+      "Bash(JAVA_HOME=/Users/hyunjun/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home ./gradlew clean assemble generateMetadataFileForMavenPublication)"
     ],
     "deny": [],
     "ask": []

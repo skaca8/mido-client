@@ -1,0 +1,48 @@
+name: Publish to Maven Central
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Build and sign artifacts
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: ./gradlew publishToMavenLocal
+
+      - name: Create and upload Maven Central bundle
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+        run: |
+          VERSION=$(grep "^version = " build.gradle | sed "s/version = '//;s/'//")
+          DIR=$HOME/.m2/repository/io/github/skaca8/mido-client/$VERSION
+
+          for f in "$DIR"/*.jar "$DIR"/*.pom "$DIR"/*.module; do
+            [ -f "$f" ] || continue
+            md5sum "$f" | awk '{print $1}' > "$f.md5"
+            sha1sum "$f" | awk '{print $1}' > "$f.sha1"
+          done
+
+          mkdir -p /tmp/maven-bundle/io/github/skaca8/mido-client/$VERSION
+          cp "$DIR"/* /tmp/maven-bundle/io/github/skaca8/mido-client/$VERSION/
+
+          cd /tmp/maven-bundle && zip -r bundle.zip .
+
+          curl --fail --request POST \
+            --user "$OSSRH_USERNAME:$OSSRH_PASSWORD" \
+            --form bundle=@bundle.zip \
+            "https://central.sonatype.com/api/v1/publisher/upload?publishingType=AUTOMATIC"

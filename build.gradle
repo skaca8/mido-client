@@ -1,12 +1,13 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
+    id 'signing'
     id 'org.springframework.boot' version '3.2.4'
     id 'io.spring.dependency-management' version '1.1.7'
 }
 
-group = 'io.github.hyunjun'
-version = '1.0.2'
+group = 'io.github.skaca8'
+version = '1.0.3'
 java.sourceCompatibility = JavaVersion.VERSION_17
 
 configurations {
@@ -47,6 +48,11 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+java {
+    withJavadocJar()
+    withSourcesJar()
 }
 
 // 라이브러리로 배포하기 위한 설정
@@ -102,5 +108,30 @@ publishing {
                 }
             }
         }
+    }
+}
+
+signing {
+    def signingKey = ((findProperty('signingKey') ?: System.getenv('SIGNING_KEY')) as String)?.replace('\\n', '\n') ?: ''
+    def signingPassword = ((findProperty('signingPassword') ?: System.getenv('SIGNING_PASSWORD')) as String) ?: ''
+    useInMemoryPgpKeys(signingKey, signingPassword)
+    sign publishing.publications.maven
+}
+
+tasks.register('updateReadmeVersion') {
+    doLast {
+        def versionPattern = ~/([0-9]+\.[0-9]+\.[0-9]+)/
+        ['README.md', 'README.ko.md'].each { filename ->
+            def f = file(filename)
+            def updated = f.text.replaceAll(
+                /(com\.github\.skaca8:mido-client:|io\.github\.skaca8:mido-client:|<version>)[0-9]+\.[0-9]+\.[0-9]+/,
+                { m -> m[0].replaceAll(versionPattern, version) }
+            ).replaceAll(
+                /(`)[0-9]+\.[0-9]+\.[0-9]+(`)/,
+                { m -> m[0].replaceAll(versionPattern, version) }
+            )
+            f.text = updated
+        }
+        println "README versions updated to $version"
     }
 }
