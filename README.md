@@ -50,7 +50,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:master-SNAPSHOT'
+    implementation 'com.github.skaca8:mido-client:1.0.0'
 }
 ```
 
@@ -66,11 +66,11 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>master-SNAPSHOT</version>
+    <version>1.0.0</version>
 </dependency>
 ```
 
-> To use a specific release, replace `master-SNAPSHOT` with a tag (e.g. `1.0.0`) or a commit hash.
+> To use a specific release, replace `1.0.0` with a tag or a commit hash.
 
 #### via Maven Central (published release)
 
