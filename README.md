@@ -41,9 +41,42 @@
 
 ### 1. Add Dependency
 
+#### via JitPack (GitHub)
+
 **Gradle**
 ```gradle
-implementation 'io.github.hyunjun:mido-client:1.0.0-SNAPSHOT'
+repositories {
+    maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+    implementation 'com.github.skaca8:mido-client:master-SNAPSHOT'
+}
+```
+
+**Maven**
+```xml
+<repositories>
+    <repository>
+        <id>jitpack.io</id>
+        <url>https://jitpack.io</url>
+    </repository>
+</repositories>
+
+<dependency>
+    <groupId>com.github.skaca8</groupId>
+    <artifactId>mido-client</artifactId>
+    <version>master-SNAPSHOT</version>
+</dependency>
+```
+
+> To use a specific release, replace `master-SNAPSHOT` with a tag (e.g. `1.0.0`) or a commit hash.
+
+#### via Maven Central (published release)
+
+**Gradle**
+```gradle
+implementation 'io.github.hyunjun:mido-client:1.0.0'
 ```
 
 **Maven**
@@ -51,7 +84,7 @@ implementation 'io.github.hyunjun:mido-client:1.0.0-SNAPSHOT'
 <dependency>
     <groupId>io.github.hyunjun</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.0</version>
 </dependency>
 ```
 
