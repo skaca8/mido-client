@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'io.github.hyunjun'
-version = '1.0.1'
+version = '1.0.2'
 java.sourceCompatibility = JavaVersion.VERSION_17
 
 configurations {
@@ -65,6 +65,15 @@ publishing {
     publications {
         create('maven', MavenPublication) {
             from components.java
+
+            versionMapping {
+                usage('java-api') {
+                    fromResolutionOf('runtimeClasspath')
+                }
+                usage('java-runtime') {
+                    fromResolutionResult()
+                }
+            }
 
             pom {
                 name = 'Spring Mido Client'
