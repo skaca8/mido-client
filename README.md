@@ -1,192 +1,238 @@
 # Spring Mido Client
 
-A Spring Boot starter for multi-channel REST client management with dynamic configuration and advanced features.
+> **YAML-driven multi-channel RestClient management for Spring Boot 3.2+**
+
+`mido-client` eliminates boilerplate `RestClient` configuration by letting you define multiple external API channels — each with its own URL, auth, timeout, logging, and interceptors — entirely in `application.yml`. No `@Bean` methods, no factory classes, no repeated setup code.
+
+## Why mido-client?
+
+| | RestClient (vanilla) | OpenFeign | **mido-client** |
+|---|---|---|---|
+| Configuration style | Java `@Bean` | Java interface + annotations | **YAML only** |
+| Multi-channel setup | Manual per bean | Manual per interface | **Built-in** |
+| Dual endpoint per service | Manual | Not supported | **Built-in** |
+| Request/response logging | Manual interceptor | Plugin required | **Built-in (4 levels)** |
+| Client instance caching | Manual | Managed by framework | **Built-in** |
+| Based on Spring Boot 3.2 RestClient | ✅ | ❌ (uses Feign) | ✅ |
 
 ## Features
 
-- 🚀 **Multi-channel support** with first/second endpoint configuration
-- 🔧 **Dynamic RestClient creation** with caching
-- 📝 **Advanced logging** (console, file, or both)
-- 🔒 **Multiple authentication** methods (Bearer, Basic, API Key)
-- 🔌 **Custom interceptors** support
-- 🌍 **Charset detection** and encoding support
-- ⚙️ **Spring Boot Auto-Configuration**
+- 🚀 **Multi-channel support** — define unlimited external API channels, each with `first` / `second` dual endpoint
+- 🔧 **Automatic client caching** — one `RestClient` instance per channel/endpoint, thread-safe via `ConcurrentHashMap`
+- 📝 **4-level built-in logging** — `off` / `console` / `file` / `all` (console + file simultaneously), includes body, URL, response time
+- 🔒 **Per-endpoint authentication** — Bearer, Basic, API Key
+- 🌍 **Smart charset detection** — Content-Type header → UTF-8 validation → channel default fallback
+- 🔌 **Custom interceptors** — register any `ClientHttpRequestInterceptor` by class name in YAML
+- 🧵 **ChannelContext with MDC** — thread-local channel action tracking, integrated with SLF4J MDC for distributed log tracing
+- ⚙️ **Zero-code Auto-Configuration** — activated with a single `mido-client.enabled: true` property
+
+## Requirements
+
+| Requirement | Minimum Version |
+|---|---|
+| Java | **17** |
+| Spring Boot | **3.2.0** |
+| Spring Framework | **6.1.0** |
+| Gradle | **7.6** |
+
+> Spring Boot 3.2+ is required because `RestClient` was introduced in Spring Framework 6.1 (shipped with Spring Boot 3.2).
 
 ## Quick Start
 
 ### 1. Add Dependency
 
+**Gradle**
 ```gradle
 implementation 'io.github.hyunjun:mido-client:1.0.0-SNAPSHOT'
 ```
 
-### 2. Configuration
+**Maven**
+```xml
+<dependency>
+    <groupId>io.github.hyunjun</groupId>
+    <artifactId>mido-client</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+</dependency>
+```
+
+### 2. Configure `application.yml`
 
 ```yaml
 mido-client:
   enabled: true
   channels:
-    auth:
-      title: "Authentication Server"
-      charset: UTF-8
-      first:
-        title: "Auth API"
-        url: https://auth.example.com
-        read-timeout-seconds: 60
-        connect-timeout-seconds: 3
-        authorization:
-          type: bearer
-          token: your-token-here
-        log: console
     payment:
       title: "Payment Service"
+      charset: UTF-8
       first:
-        title: "Payment Query API"
-        url: https://payment.example.com
-        log: all
-      second:
-        title: "Payment Processing API"
-        url: https://payment-process.example.com
-        read-timeout-seconds: 120
+        url: https://api.payment.com
+        read-timeout-seconds: 30
+        connect-timeout-seconds: 5
         authorization:
           type: bearer
-          token: another-token
-        interceptors:
-          - com.example.CustomInterceptor
+          token: ${PAYMENT_QUERY_TOKEN}
+        log: console
+      second:                                   # optional: second endpoint for same service
+        url: https://process.payment.com
+        read-timeout-seconds: 60
+        authorization:
+          type: bearer
+          token: ${PAYMENT_PROCESS_TOKEN}
+        log: all
+    auth:
+      first:
+        url: https://auth.example.com
+        authorization:
+          type: bearer
+          token: ${AUTH_TOKEN}
+        headers:
+          - name: X-API-Version
+            value: v1
 ```
 
-### 3. Usage
+### 3. Use in Your Service
 
 ```java
 @Service
 @RequiredArgsConstructor
-public class PaymentService {
+public class PaymentService extends BaseExternalApi {
 
     private final MidoClientFactory midoClientFactory;
 
-    public String queryPayment() {
-        RestClient client = midoClientFactory.getOrCreateClient("payment");
-        return client.get()
-            .uri("/payment/status")
-            .retrieve()
-            .body(String.class);
+    @Override
+    protected String getChannelName() {
+        return "payment";
     }
 
-    public String processPayment() {
-        RestClient client = midoClientFactory.getOrCreateClient("payment", EndpointType.SECOND);
-        return client.post()
-            .uri("/payment/process")
-            .body(paymentRequest)
-            .retrieve()
-            .body(String.class);
+    public PaymentStatus getPaymentStatus(String paymentId) {
+        return withDefaultChannelAction("getPaymentStatus", () -> {
+            RestClient client = midoClientFactory.getOrCreateClient("payment");
+            return client.get()
+                .uri("/payments/{id}/status", paymentId)
+                .retrieve()
+                .body(PaymentStatus.class);
+        });
+    }
+
+    public PaymentResult processPayment(PaymentRequest request) {
+        return withDefaultChannelAction("processPayment", () -> {
+            RestClient client = midoClientFactory.getOrCreateClient("payment", EndpointType.SECOND);
+            return client.post()
+                .uri("/payments/process")
+                .body(request)
+                .retrieve()
+                .body(PaymentResult.class);
+        });
     }
 }
 ```
 
-## Configuration Properties
+> `BaseExternalApi.withDefaultChannelAction()` automatically sets and clears `ChannelContext` around each call, including on exception.
 
-### Channel Configuration
+## Configuration Reference
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `enabled` | Boolean | `false` | Enable Mido Client |
-| `channels.<name>.title` | String | - | Channel description (optional) |
-| `channels.<name>.charset` | String | `UTF-8` | Character encoding |
-
-### Endpoint Configuration
+### Channel (`mido-client.channels.<name>`)
 
 | Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `url` | String | - | **Required** - Endpoint URL |
+|---|---|---|---|
+| `title` | String | - | Channel description (optional) |
+| `charset` | String | `UTF-8` | Default character encoding for response body |
+
+### Endpoint (`first` / `second`)
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `url` | String | - | **Required.** Base URL of the endpoint |
 | `title` | String | - | Endpoint description (optional) |
-| `read-timeout-seconds` | Long | `60` | Read timeout in seconds |
-| `connect-timeout-seconds` | Long | `3` | Connection timeout in seconds |
-| `log` | LogLevel | `console` | Logging level: `off`, `console`, `file`, `all` |
+| `read-timeout-seconds` | Long | `60` | Read timeout |
+| `connect-timeout-seconds` | Long | `3` | Connection timeout |
+| `log` | LogLevel | `console` | `off` / `console` / `file` / `all` |
+| `authorization.type` | TokenType | - | `bearer` / `basic` / `api_key` |
+| `authorization.token` | String | - | Authentication token value |
+| `headers` | List | - | Static headers to attach to every request |
+| `interceptors` | List\<String\> | - | Fully-qualified class names of `ClientHttpRequestInterceptor` |
 
-### Authentication
+### Global
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `authorization.type` | TokenType | `bearer`, `basic`, `api_key` |
-| `authorization.token` | String | Authentication token |
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `mido-client.enabled` | Boolean | `false` | Enable/disable the entire library |
 
-### Headers & Interceptors
-
-```yaml
-headers:
-  - name: "X-Custom-Header"
-    value: "custom-value"
-
-interceptors:
-  - "com.example.MyInterceptor"
-  - "com.example.AnotherInterceptor"
-```
-
-## Advanced Features
+## Advanced Usage
 
 ### Custom Interceptors
 
-Create a custom interceptor by implementing `ClientHttpRequestInterceptor`:
+Implement `ClientHttpRequestInterceptor` and register by class name in YAML:
 
 ```java
 @Component
-public class CustomInterceptor implements ClientHttpRequestInterceptor {
+public class RequestIdInterceptor implements ClientHttpRequestInterceptor {
 
     @Override
-    public ClientHttpResponse intercept(
-            HttpRequest request,
-            byte[] body,
+    public ClientHttpResponse intercept(HttpRequest request, byte[] body,
             ClientHttpRequestExecution execution) throws IOException {
-
-        // Add custom logic here
+        request.getHeaders().add("X-Request-Id", UUID.randomUUID().toString());
         return execution.execute(request, body);
     }
 }
 ```
 
-### Channel Context
+```yaml
+interceptors:
+  - "com.example.RequestIdInterceptor"
+```
 
-Use `ChannelContext` for tracking requests across threads:
+### ChannelContext & MDC
+
+`BaseExternalApi.withDefaultChannelAction()` sets `ChannelContext` automatically. For manual usage:
 
 ```java
-ChannelContext.setChannelAction("payment-query");
+ChannelContext.setChannelAction("payment.processPayment");
 try {
-    // Your REST call here
+    // your REST call — channelAction appears in all logs via MDC
 } finally {
     ChannelContext.clear();
 }
 ```
 
+The action key `channelAction` is available in log patterns:
+```xml
+<!-- logback.xml -->
+<pattern>%d [%X{channelAction}] %-5level %msg%n</pattern>
+```
+
 ## Logging
 
-The library provides comprehensive logging with different levels:
+| Level | Console | File (`MidoClientFileLog`) |
+|---|---|---|
+| `off` | ❌ | ❌ |
+| `console` | ✅ | ❌ |
+| `file` | ❌ | ✅ |
+| `all` | ✅ | ✅ |
 
-- `off`: No logging
-- `console`: Log to console only
-- `file`: Log to file only (uses `MidoClientFileLog` logger)
-- `all`: Log to both console and file
+Each log entry includes: channel action, HTTP method, URL, request/response body, response time, HTTP status.
 
-Log format includes:
-- Channel action
-- HTTP method and URL
-- Request/response body
-- Response time
-- HTTP status
+To enable file logging, add a logger named `MidoClientFileLog` in your `logback.xml`:
 
-## Requirements
+```xml
+<appender name="MIDO_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>logs/mido-client.log</file>
+    <!-- rolling policy -->
+</appender>
 
-- Java 17+
-- Spring Boot 3.2+ (RestClient minimum version)
-- Spring Framework 6.1+ (RestClient support)
+<logger name="MidoClientFileLog" level="INFO" additivity="false">
+    <appender-ref ref="MIDO_FILE"/>
+</logger>
+```
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 — see the [LICENSE](LICENSE) file for details.
 
 ## Contributing
 
 1. Fork the repository
-2. Create your feature branch
+2. Create your feature branch (`git checkout -b feature/your-feature`)
 3. Commit your changes
 4. Push to the branch
-5. Create a Pull Request
+5. Open a Pull Request
