@@ -1,4 +1,4 @@
-# Stay-Hub Development Skills
+# mido-client Development Skills
 
 Spring Boot 기반 숙박 예약 시스템 개발을 위한 Claude 세션 규칙과 스킬셋입니다.
 
@@ -105,7 +105,7 @@ if (marginRate == null || marginRate.equals("")) return;
 
 - 문서는 업데이트되지 않고, 팀원 변경시 흐름 추적이 어려워짐
 
-## Stay-Hub 도메인 지식
+## mido-client 도메인 지식
 
 ### 모듈 구조
 
@@ -248,6 +248,6 @@ public class AlpensiaConstant {
 2. **코드 분석**: 기존 유사 파일 패턴 먼저 확인
 3. **Spring 우선**: 커스텀 구현 전 Spring 솔루션 검토
 4. **품질 검증**: SonarLint 및 IntelliJ 경고 해결
-5. **도메인 적용**: Stay-Hub 특화 패턴 및 상수 활용
+5. **도메인 적용**: mido-client 특화 패턴 및 상수 활용
 
-Stay-Hub 프로젝트의 일관성 있고 고품질의 코드 개발을 위해 이 가이드라인을 따라주세요.
+mido-client 프로젝트의 일관성 있고 고품질의 코드 개발을 위해 이 가이드라인을 따라주세요.

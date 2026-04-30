@@ -1,7 +1,7 @@
-version: 1
-name: stay-hub-pipeline
+version: "1"
+name: mido-client-pipeline
 description: >
-  Stay-Hub 팀의 Spring Boot 기반 프로젝트용 통합 개발 파이프라인.
+  mido-client 팀의 Spring Boot 기반 프로젝트용 통합 개발 파이프라인.
   dev_agent → test_agent → quality_agent → security_agent 순서로 실행됨.
 
 stages:
@@ -51,7 +51,7 @@ stages:
       - "취약점 발견 시 개선 가이드 제시"
     on_success:
       - message: "security_agent success."
-    on_failure:
+    on_fail/ure:
       - message: "security_agent failure."
 
 rules:
@@ -62,8 +62,8 @@ rules:
     output: .claude/logs/pipeline.log
     format: "[%(asctime)s] [%(levelname)s] %(message)s"
   notifications:
-    on_start: "stay-hub pipeline start."
-    on_complete: "stay-hub pipeline success."
+    on_start: "mido-client pipeline start."
+    on_complete: "mido-client pipeline success."
     on_failure: "tay-hub pipeline failure."
 
 # ===================================
@@ -71,7 +71,7 @@ rules:
 # ===================================
 metadata:
   author: "Hyunjun"
-  team: "Stay-Hub Backend"
+  team: "mido-client Backend"
   created: "2025-11-04"
   updated: "2025-11-04"
   version_tag: "v1.0.0"

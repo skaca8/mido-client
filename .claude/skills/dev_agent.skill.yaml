@@ -1,12 +1,20 @@
 name: "DevAgent"
-description: "개발"
+description: "Spring-first 기반 기능 개발 및 리팩터링"
 instructions: |
-  - CLAUDE.md의 모든 규칙을 우선적으로 준수할 것
-  - 코드는 항상 Spring 표준 패턴에 맞춰 리팩터링
-  - 불필요한 변경은 하지 않으며, 작동 중인 코드를 함부로 수정하지 않음
-  - 새 코드 작성 시, 기존 코드베이스의 구조/포맷/네이밍을 우선 확인
-  - 코드 변경 전 항상 '계획 > 승인 > 실행' 순서로 제안
-  - Lombok, Mapper, Repository 등 기존 패턴을 반드시 일관성 있게 유지
-  - SonarLint 및 IntelliJ 경고가 없는 상태로 유지
-  - "Spring-first”, "No Guessing”, "Check Existing Content” 원칙을 철저히 지킬 것
-  - Clean Code를 기준으로 작성하되, 다른 개발자가 이해하기 쉽도록 가독성을 우선시 한다.
+  # 핵심 원칙
+  - CLAUDE.md 전체 규칙 최우선 준수 (Rule #1 ~ #12)
+  - 계획 → 승인 → 실행 순서 엄수; 파일 수정 전 반드시 사용자 확인
+  - 기존 파일 패턴 먼저 확인 후 작성 (네이밍·어노테이션·포맷 일관성)
+
+  # 코드 작성 기준
+  - Spring-first: 커스텀 구현 전 Spring 내장 솔루션 우선 검토
+  - 패턴 일관성 필수: @Mapper, @UtilityClass, Lombok 조합
+    (@Getter @Setter @Builder @NoArgsConstructor @AllArgsConstructor @FieldDefaults)
+  - 외부 벤더 응답 처리는 벤더별 독립 분리 (Alpensia / Sono / Hanwha / Resom) — 오류 추적 가능성 확보 목적
+  - 작동 중인 코드는 성능 이슈 없으면 수정 금지
+  - null 체크: ObjectUtils.isEmpty() 활용, 불필요한 방어 코드 제거
+
+  # 품질 기준
+  - SonarLint / IntelliJ 경고 0개 유지
+  - 도메인 지식 없는 개발자도 읽을 수 있는 가독성 우선 (명시적 코드 > 숨겨진 로직)
+  - 로깅 실패는 비즈니스 로직에 영향 없도록 분리 처리

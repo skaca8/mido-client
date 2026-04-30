@@ -1,7 +1,7 @@
 version: 1
 project:
-  name: stay-hub
-  pipeline: stay-hub-pipeline
+  name: mido-client
+  pipeline: mido-client-pipeline
 
 default_skill: dev_agent
 language: ko
@@ -76,8 +76,8 @@ workflow:
   mode: sequential
   stop_on_failure: true
   notifications:
-    success: "stay-hub pipeline success."
-    failure: "stay-hub pipeline failure."
+    success: "mido-client pipeline success."
+    failure: "mido-client pipeline failure."
 
 hooks:
   on_start:
