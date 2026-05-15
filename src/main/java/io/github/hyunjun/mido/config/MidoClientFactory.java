@@ -38,7 +38,7 @@ public class MidoClientFactory {
                 .requestFactory(requestFactory)
                 .messageConverters(converters -> configureMessageConverters(converters, charset))
                 .defaultHeaders(headers -> configureHeaders(headers, endpointConfig.getAuthorization(), endpointConfig.getHeaders()))
-                .requestInterceptors(interceptors -> interceptors.addAll(createInterceptors(endpointConfig.getInterceptors(), endpointConfig.getLog(), charset)));
+                .requestInterceptors(interceptors -> interceptors.addAll(createInterceptors(endpointConfig.getInterceptors(), endpointConfig.getLog(), charset, endpointConfig.getGzip())));
     }
 
     public RestClient getOrCreateClient(String channelName) {
@@ -85,7 +85,7 @@ public class MidoClientFactory {
         throw new IllegalArgumentException("Unsupported EndpointType: " + endpointType);
     }
 
-    private List<ClientHttpRequestInterceptor> createInterceptors(List<String> interceptorClassNames, LogLevel logLevel, Charset charset) {
+    private List<ClientHttpRequestInterceptor> createInterceptors(List<String> interceptorClassNames, LogLevel logLevel, Charset charset, MidoClientProperties.Gzip gzip) {
         List<ClientHttpRequestInterceptor> interceptorList = new ArrayList<>();
 
         if (interceptorClassNames != null && !interceptorClassNames.isEmpty()) {
@@ -93,7 +93,23 @@ public class MidoClientFactory {
         }
 
         interceptorList.add(new MidoLoggingInterceptor(logLevel, charset));
+
+        // gzip은 logging 뒤에 등록해야 로깅이 평문 body를 본다 (디버깅 가독성 우선)
+        addGzipInterceptors(interceptorList, gzip);
+
         return interceptorList;
+    }
+
+    private void addGzipInterceptors(List<ClientHttpRequestInterceptor> interceptorList, MidoClientProperties.Gzip gzip) {
+        if (gzip == null) return;
+        if (Boolean.TRUE.equals(gzip.getRequest())) {
+            int minSize = gzip.getMinSize() != null ? gzip.getMinSize() : 1024;
+            interceptorList.add(new MidoGzipRequestInterceptor(minSize));
+        }
+        if (Boolean.TRUE.equals(gzip.getResponse())) {
+            int maxSize = gzip.getMaxDecompressedSize() != null ? gzip.getMaxDecompressedSize() : 10 * 1024 * 1024;
+            interceptorList.add(new MidoGzipResponseInterceptor(maxSize));
+        }
     }
 
     private void addCustomInterceptors(List<ClientHttpRequestInterceptor> interceptorList, List<String> classNames) {

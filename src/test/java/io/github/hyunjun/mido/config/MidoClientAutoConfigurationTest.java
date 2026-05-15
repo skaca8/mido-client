@@ -6,8 +6,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 class MidoClientAutoConfigurationTest {
@@ -84,6 +82,137 @@ class MidoClientAutoConfigurationTest {
                     assertThat(firstEndpoint.getHeaders()).hasSize(1);
                     assertThat(firstEndpoint.getHeaders().get(0).getName()).isEqualTo("X-Custom-Header");
                     assertThat(firstEndpoint.getHeaders().get(0).getValue()).isEqualTo("custom-value");
+                });
+    }
+
+    @Test
+    void shouldBindGzipPropertiesFromYaml() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.first.url=https://api.test.com",
+                        "mido-client.channels.test.first.gzip.request=true",
+                        "mido-client.channels.test.first.gzip.response=true",
+                        "mido-client.channels.test.first.gzip.min-size=2048"
+                )
+                .run(context -> {
+                    MidoClientProperties properties = context.getBean(MidoClientProperties.class);
+                    MidoClientProperties.Gzip gzip = properties.getChannels().get("test").getFirst().getGzip();
+
+                    assertThat(gzip).isNotNull();
+                    assertThat(gzip.getRequest()).isTrue();
+                    assertThat(gzip.getResponse()).isTrue();
+                    assertThat(gzip.getMinSize()).isEqualTo(2048);
+                });
+    }
+
+    @Test
+    void shouldFailValidationWhenUrlIsBlank() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.first.url="
+                )
+                .run(context -> assertThat(context).hasFailed()
+                        .getFailure()
+                        .hasStackTraceContaining("url"));
+    }
+
+    @Test
+    void shouldFailValidationWhenUrlSchemeIsInvalid() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.first.url=ftp://nope"
+                )
+                .run(context -> assertThat(context).hasFailed()
+                        .getFailure()
+                        .hasStackTraceContaining("url"));
+    }
+
+    @Test
+    void shouldFailValidationWhenTimeoutIsNonPositive() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.first.url=https://api.test.com",
+                        "mido-client.channels.test.first.read-timeout-seconds=0"
+                )
+                .run(context -> assertThat(context).hasFailed()
+                        .getFailure()
+                        .hasStackTraceContaining("readTimeoutSeconds"));
+    }
+
+    @Test
+    void shouldFailValidationWhenGzipMaxDecompressedSizeIsZero() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.first.url=https://api.test.com",
+                        "mido-client.channels.test.first.gzip.max-decompressed-size=0"
+                )
+                .run(context -> assertThat(context).hasFailed()
+                        .getFailure()
+                        .hasStackTraceContaining("maxDecompressedSize"));
+    }
+
+    @Test
+    void shouldFailValidationWhenHeaderNameIsBlank() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.first.url=https://api.test.com",
+                        "mido-client.channels.test.first.headers[0].name=",
+                        "mido-client.channels.test.first.headers[0].value=v"
+                )
+                .run(context -> assertThat(context).hasFailed()
+                        .getFailure()
+                        .hasStackTraceContaining("'name'"));
+    }
+
+    @Test
+    void shouldFailValidationWhenChannelFirstIsMissing() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.title=No First Endpoint"
+                )
+                .run(context -> assertThat(context).hasFailed()
+                        .getFailure()
+                        .hasStackTraceContaining("'first'"));
+    }
+
+    @Test
+    void shouldBindMaxDecompressedSizeFromYaml() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.first.url=https://api.test.com",
+                        "mido-client.channels.test.first.gzip.max-decompressed-size=20971520"
+                )
+                .run(context -> {
+                    MidoClientProperties properties = context.getBean(MidoClientProperties.class);
+                    MidoClientProperties.Gzip gzip = properties.getChannels().get("test").getFirst().getGzip();
+                    assertThat(gzip.getMaxDecompressedSize()).isEqualTo(20 * 1024 * 1024);
+                });
+    }
+
+    @Test
+    void shouldApplyGzipDefaultsWhenNotConfigured() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.first.url=https://api.test.com"
+                )
+                .run(context -> {
+                    MidoClientProperties properties = context.getBean(MidoClientProperties.class);
+                    MidoClientProperties.Gzip gzip = properties.getChannels().get("test").getFirst().getGzip();
+
+                    assertThat(gzip).isNotNull();
+                    assertThat(gzip.getRequest()).isFalse();
+                    assertThat(gzip.getResponse()).isFalse();
+                    assertThat(gzip.getMinSize()).isEqualTo(1024);
+                    assertThat(gzip.getMaxDecompressedSize()).isEqualTo(10 * 1024 * 1024);
                 });
     }
 }

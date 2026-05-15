@@ -26,6 +26,8 @@
 - **엔드포인트별 인증** — Bearer, Basic, API Key 방식 지원
 - **스마트 인코딩 감지** — Content-Type 헤더 → UTF-8 유효성 검사 → 채널 기본값 순으로 자동 결정
 - **커스텀 인터셉터** — `ClientHttpRequestInterceptor` 구현체를 YAML에 클래스명으로 등록
+- **채널별 gzip 압축** — 요청 바디는 `min-size` 임계값 이상일 때만 압축, 응답은 자동 해제 + 압축 폭탄 방어 cap(`max-decompressed-size`)
+- **부팅 시 설정 검증** — `@Validated` Bean Validation으로 잘못된 YAML을 시작 시점에 거부, `BindValidationException`에 어떤 필드가 잘못되었는지 명시
 - **ChannelContext + MDC 연동** — 스레드 로컬 채널 액션 추적, SLF4J MDC와 통합되어 로그에 자동 포함
 - **자동 설정** — `mido-client.enabled: true` 프로퍼티 하나로 활성화
 
@@ -196,12 +198,27 @@ public class PaymentService extends BaseExternalApi {
 | `authorization.token`     | String         | -         | 인증 토큰 값                                        |
 | `headers`                 | List           | -         | 모든 요청에 고정으로 추가할 헤더 목록                          |
 | `interceptors`            | List\<String\> | -         | `ClientHttpRequestInterceptor` 구현체의 전체 클래스명 목록 |
+| `gzip.request`            | Boolean        | `false`   | 요청 바디 gzip 압축 (`Content-Encoding: gzip` 자동 추가) |
+| `gzip.response`           | Boolean        | `false`   | `Accept-Encoding: gzip` 강제 후 응답 자동 해제 |
+| `gzip.min-size`           | Integer        | `1024`    | 요청 바디가 이 크기 미만이면 압축 skip (bytes) |
+| `gzip.max-decompressed-size` | Integer     | `10485760`| 응답 해제 결과가 이 크기를 넘으면 `IOException` (압축 폭탄 방어, bytes) |
 
 ### 전역 설정
 
 | 프로퍼티                  | 타입      | 기본값     | 설명           |
 |-----------------------|---------|---------|--------------|
 | `mido-client.enabled` | Boolean | `false` | 라이브러리 활성화 여부 |
+
+### 설정 검증
+
+`mido-client`는 애플리케이션 시작 시점에 `@ConfigurationProperties`를 검증합니다. 잘못된 설정은 `BindValidationException`과 함께 어떤 필드가 잘못되었고 거부된 값이 무엇인지 표시하며 컨텍스트 로드에 실패합니다. 다음 경우 검증에 실패합니다.
+
+- `url`이 비어있거나 `^https?://.+`에 매치되지 않음
+- `read-timeout-seconds` 또는 `connect-timeout-seconds`가 0 이하
+- `gzip.min-size`가 음수
+- `gzip.max-decompressed-size`가 0 이하
+- `headers[].name` 또는 `headers[].value`가 비어있음
+- 채널에 필수 `first` 엔드포인트가 없음
 
 ## 고급 사용법
 
@@ -227,6 +244,31 @@ public class RequestIdInterceptor implements ClientHttpRequestInterceptor {
 interceptors:
   - "com.example.RequestIdInterceptor"
 ```
+
+### Gzip 압축
+
+채널별로 HTTP 바디 압축을 opt-in 방식으로 활성화합니다. 송/수신 방향은 독립적으로 설정 가능합니다.
+
+```yaml
+mido-client:
+  channels:
+    payment:
+      first:
+        url: https://api.payment.com
+        gzip:
+          request: true                    # 요청 바디 압축
+          response: true                   # 압축 응답 요청 및 자동 해제
+          min-size: 1024                   # 작은 바디는 압축 skip
+          max-decompressed-size: 10485760  # 10 MB 안전 cap
+```
+
+**동작**:
+
+- `request: true` — 바디 크기가 `min-size` 이상이면 gzip 압축 후 전송, `Content-Encoding: gzip` 헤더 자동 추가.
+- `response: true` — 요청에 `Accept-Encoding: gzip`을 박고, 서버가 `Content-Encoding: gzip`으로 응답하면 메시지 컨버터가 보기 전에 투명하게 해제.
+- `max-decompressed-size`는 압축 폭탄(decompression bomb) 방어 — 해제 결과가 cap을 넘으면 즉시 `IOException`이 발생하며 메모리 사용량은 버퍼 + cap 수준으로 제한됩니다.
+
+인터셉터 등록 순서가 보존되어 로깅에는 항상 평문 바디가 찍히고, 네트워크에는 압축된 바이트가 흘러갑니다.
 
 ### ChannelContext와 MDC
 

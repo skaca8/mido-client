@@ -121,6 +121,48 @@ class MidoClientFactoryTest {
     }
 
     @Test
+    void shouldCreateClientWithGzipEnabled() {
+        // Given
+        MidoClientProperties.ChannelConfig channelConfig = new MidoClientProperties.ChannelConfig();
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+        endpoint.setUrl("https://gzip.test.com");
+        MidoClientProperties.Gzip gzip = new MidoClientProperties.Gzip();
+        gzip.setRequest(true);
+        gzip.setResponse(true);
+        gzip.setMinSize(512);
+        endpoint.setGzip(gzip);
+        channelConfig.setFirst(endpoint);
+        properties.getChannels().put("gzipChannel", channelConfig);
+
+        // When
+        RestClient client = factory.getOrCreateClient("gzipChannel");
+
+        // Then
+        assertThat(client).isNotNull();
+    }
+
+    @Test
+    void shouldCreateClientWhenGzipDefaultsApplied() {
+        // Given - no explicit gzip config; default object should be used (request=false, response=false)
+        MidoClientProperties.ChannelConfig channelConfig = new MidoClientProperties.ChannelConfig();
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+        endpoint.setUrl("https://default-gzip.test.com");
+        channelConfig.setFirst(endpoint);
+        properties.getChannels().put("defaultGzip", channelConfig);
+
+        // When
+        RestClient client = factory.getOrCreateClient("defaultGzip");
+
+        // Then
+        assertThat(client).isNotNull();
+        assertThat(endpoint.getGzip()).isNotNull();
+        assertThat(endpoint.getGzip().getRequest()).isFalse();
+        assertThat(endpoint.getGzip().getResponse()).isFalse();
+        assertThat(endpoint.getGzip().getMinSize()).isEqualTo(1024);
+        assertThat(endpoint.getGzip().getMaxDecompressedSize()).isEqualTo(10 * 1024 * 1024);
+    }
+
+    @Test
     void shouldHandleChannelWithoutSecondEndpoint() {
         // Given
         MidoClientProperties.ChannelConfig channelConfig = new MidoClientProperties.ChannelConfig();

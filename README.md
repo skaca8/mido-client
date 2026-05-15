@@ -28,6 +28,8 @@ factory classes, no repeated setup code.
 - **Per-endpoint authentication** — Bearer, Basic, API Key
 - **Smart charset detection** — Content-Type header → UTF-8 validation → channel default fallback
 - **Custom interceptors** — register any `ClientHttpRequestInterceptor` by class name in YAML
+- **Per-channel gzip** — opt-in request compression with `min-size` skip threshold; response auto-decompression with decompression-bomb defense cap (`max-decompressed-size`)
+- **Fail-fast configuration validation** — `@Validated` Bean Validation rejects malformed YAML at startup with a `BindValidationException` indicating the offending field
 - **ChannelContext with MDC** — thread-local channel action tracking, integrated with SLF4J MDC for distributed log
   tracing
 - **Zero-code Auto-Configuration** — activated with a single `mido-client.enabled: true` property
@@ -201,12 +203,27 @@ public class PaymentService extends BaseExternalApi {
 | `authorization.token`     | String         | -         | Authentication token value                                    |
 | `headers`                 | List           | -         | Static headers to attach to every request                     |
 | `interceptors`            | List\<String\> | -         | Fully-qualified class names of `ClientHttpRequestInterceptor` |
+| `gzip.request`            | Boolean        | `false`   | Compress outgoing request body (`Content-Encoding: gzip`)     |
+| `gzip.response`           | Boolean        | `false`   | Force `Accept-Encoding: gzip` and auto-decompress response    |
+| `gzip.min-size`           | Integer        | `1024`    | Skip request compression when body is smaller than this (bytes) |
+| `gzip.max-decompressed-size` | Integer     | `10485760` | Throw `IOException` if decompressed response exceeds this (bytes — decompression-bomb defense) |
 
 ### Global
 
 | Property              | Type    | Default | Description                       |
 |-----------------------|---------|---------|-----------------------------------|
 | `mido-client.enabled` | Boolean | `false` | Enable/disable the entire library |
+
+### Configuration Validation
+
+`mido-client` validates `@ConfigurationProperties` at application startup. Misconfiguration causes the context to fail to start with a `BindValidationException` that indicates the offending field and the rejected value. Examples that fail validation:
+
+- `url` is blank or doesn't match `^https?://.+`
+- `read-timeout-seconds` or `connect-timeout-seconds` is zero or negative
+- `gzip.min-size` is negative
+- `gzip.max-decompressed-size` is zero or negative
+- `headers[].name` or `headers[].value` is blank
+- A channel is missing its required `first` endpoint
 
 ## Advanced Usage
 
@@ -232,6 +249,31 @@ public class RequestIdInterceptor implements ClientHttpRequestInterceptor {
 interceptors:
   - "com.example.RequestIdInterceptor"
 ```
+
+### Gzip Compression
+
+Per-channel opt-in HTTP body compression. Each direction is independently toggleable.
+
+```yaml
+mido-client:
+  channels:
+    payment:
+      first:
+        url: https://api.payment.com
+        gzip:
+          request: true                    # compress outgoing body
+          response: true                   # request gzipped response and auto-decompress
+          min-size: 1024                   # skip compression for small bodies
+          max-decompressed-size: 10485760  # 10 MB safety cap
+```
+
+**Behavior**:
+
+- `request: true` — bodies ≥ `min-size` bytes are gzipped before sending; `Content-Encoding: gzip` is added automatically.
+- `response: true` — `Accept-Encoding: gzip` is sent; if the server replies with `Content-Encoding: gzip`, the body is transparently decompressed before reaching your message converters.
+- `max-decompressed-size` defends against decompression bombs — if the decompressed response exceeds the cap, an `IOException` is thrown immediately and memory stays bounded to roughly buffer + cap.
+
+Interceptors are ordered so that logging always sees plain-text bodies while the network carries compressed bytes.
 
 ### ChannelContext & MDC
 
