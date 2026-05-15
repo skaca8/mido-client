@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>mido-client 시각 분석 4종</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --line: #2a313b;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --good: #56d364;
+    --warn: #f0b72f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+  }
+  header { margin-bottom: 28px; }
+  header h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.5px; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  @media (min-width: 1300px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 22px 24px 18px;
+  }
+  .card h2 {
+    margin: 0 0 4px; font-size: 18px; color: var(--accent);
+  }
+  .card .sub {
+    margin: 0 0 14px; color: var(--muted); font-size: 13px;
+  }
+  .mermaid {
+    background: #0b0f14;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    overflow-x: auto;
+  }
+  .caption {
+    margin-top: 12px; font-size: 13px; color: var(--muted);
+  }
+  footer {
+    margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center;
+  }
+  code {
+    background: #0b0f14; padding: 1px 5px; border-radius: 4px;
+    font-size: 12px; color: var(--good);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>mido-client — 4개 화면 시각 분석</h1>
+  <p>출처: <code>src/main/java/io/github/hyunjun/mido/**</code> 실제 구현 기반</p>
+</header>
+
+<div class="grid">
+
+  <!-- ============================================ -->
+  <!-- 화면 1. 전체 아키텍처 -->
+  <!-- ============================================ -->
+  <section class="card">
+    <h2>화면 1. 전체 아키텍처</h2>
+    <p class="sub">자동 구성 진입 → 빈 등록 → 사용자 서비스까지의 정적 구조</p>
+    <div class="mermaid">
+flowchart TB
+    subgraph CFG["설정 / 부팅"]
+        direction TB
+        Y["application.yml\nmido-client.enabled=true"]
+        AC["MidoClientAutoConfiguration\n@ConditionalOnProperty"]
+        P["MidoClientProperties\n@Validated + JSR-303"]
+        Y --> AC
+        AC --> P
+    end
+
+    subgraph CORE["핵심 빈"]
+        direction TB
+        F["MidoClientFactory\nConcurrentHashMap 캐시"]
+        LI["MidoLoggingInterceptor"]
+        GR["MidoGzipRequestInterceptor"]
+        GS["MidoGzipResponseInterceptor"]
+    end
+
+    subgraph CTX["컨텍스트"]
+        direction TB
+        BE["BaseExternalApi\nwithDefaultChannelAction"]
+        CH["ChannelContext\nThreadLocal + MDC"]
+        BE --> CH
+    end
+
+    subgraph USER["사용자 코드"]
+        direction TB
+        SVC["YourService\nextends BaseExternalApi"]
+        RC["RestClient 인스턴스\nchannel x endpoint 캐싱"]
+    end
+
+    AC -->|"@Bean"| F
+    P -->|"채널 설정 주입"| F
+    F -->|"인터셉터 등록"| LI
+    F -->|"gzip 옵션 시"| GR
+    F -->|"gzip 옵션 시"| GS
+    SVC -->|"getOrCreateClient"| F
+    F -->|"캐시된 RestClient"| RC
+    SVC --> BE
+    LI -.->|"channelAction 읽기"| CH
+
+    classDef cfg fill:#1f2a3a,stroke:#58a6ff,color:#e6edf3;
+    classDef core fill:#1d2b1f,stroke:#56d364,color:#e6edf3;
+    classDef ctx fill:#2b261a,stroke:#f0b72f,color:#e6edf3;
+    classDef user fill:#2a1d2b,stroke:#d2a8ff,color:#e6edf3;
+    class Y,AC,P cfg;
+    class F,LI,GR,GS core;
+    class BE,CH ctx;
+    class SVC,RC user;
+    </div>
+    <p class="caption">노란 박스가 ThreadLocal/MDC 컨텍스트, 초록이 라이브러리 핵심 빈, 파랑이 설정·부팅. 사용자 코드(보라)는 <code>MidoClientFactory</code> 한 곳만 의존합니다.</p>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- 화면 2. 인터셉터 체인 (요청/응답) -->
+  <!-- ============================================ -->
+  <section class="card">
+    <h2>화면 2. 인터셉터 체인 — 요청/응답 흐름</h2>
+    <p class="sub">로깅이 평문 body 를 보고, 네트워크에는 압축본이 흐르는 의도된 순서</p>
+    <div class="mermaid">
+sequenceDiagram
+    autonumber
+    participant SVC as Service
+    participant CUSTOM as 커스텀 인터셉터
+    participant LOG as MidoLoggingInterceptor
+    participant GREQ as MidoGzipRequestInterceptor
+    participant GRES as MidoGzipResponseInterceptor
+    participant NET as 외부 서버
+
+    SVC->>CUSTOM: 요청 (평문 body)
+    CUSTOM->>LOG: X-Request-Id 등 추가
+    LOG->>GREQ: 평문 body 그대로 로깅
+    GREQ->>GRES: body.length >= minSize 면 gzip 압축
+    GRES->>NET: Accept-Encoding gzip 강제 + 전송
+
+    NET-->>GRES: 응답 (Content-Encoding gzip 가능)
+    GRES-->>LOG: 평문으로 디컴프레션 (cap 검사)
+    LOG-->>GREQ: 평문 응답 로깅
+    GREQ-->>CUSTOM: 통과
+    CUSTOM-->>SVC: 비즈니스 코드로 반환
+
+    Note over GRES: maxDecompressedSize 초과 시\nIOException 즉시 발생
+    Note over LOG: log 레벨 off 면 양방향 모두 skip
+    </div>
+    <p class="caption">등록 순서가 곧 호출 순서입니다. <code>MidoClientFactory.createInterceptors()</code> 의 주석 — "gzip 은 logging 뒤에 등록해야 로깅이 평문 body 를 본다" — 가 이 다이어그램의 핵심.</p>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- 화면 3. 채널 캐시 룩업 흐름 -->
+  <!-- ============================================ -->
+  <section class="card">
+    <h2>화면 3. 채널 캐시 룩업 — <code>getOrCreateClient</code></h2>
+    <p class="sub">캐시 키 = <code>channel.toLowerCase() + "-first/second"</code>, SECOND 미설정 시 first 폴백</p>
+    <div class="mermaid">
+flowchart TB
+    A["서비스 호출\ngetOrCreateClient name, type"]
+    B{"endpointType\n인자 있음?"}
+    C1["cacheKey = name.toLower + '-first'"]
+    C2["cacheKey = name.toLower + '-' + type.value"]
+    D["ConcurrentHashMap\ncomputeIfAbsent"]
+    E{"캐시 미스?"}
+    F["RestClient 신규 생성\nbaseRestClient builder"]
+    G["캐시에 저장 후 반환"]
+    H["기존 인스턴스 반환"]
+
+    A --> B
+    B -->|"없음"| C1
+    B -->|"있음"| C2
+    C1 --> D
+    C2 --> D
+    D --> E
+    E -->|"미스"| F
+    F --> G
+    E -->|"히트"| H
+
+    subgraph CREATE["createClient 내부"]
+        direction TB
+        K1["채널 설정 조회\ngetChannelConfig"]
+        K2{"type SECOND?"}
+        K3["second 설정"]
+        K4["second null 이면\nfirst 폴백"]
+        K5["URL 검증 / charset 결정"]
+        K6["인터셉터 체인 구성"]
+        K1 --> K2
+        K2 -->|"YES"| K3
+        K3 --> K4
+        K2 -->|"NO"| K5
+        K4 --> K5
+        K5 --> K6
+    end
+
+    F -.-> K1
+
+    classDef hot fill:#1d2b1f,stroke:#56d364,color:#e6edf3;
+    classDef cold fill:#2b1f1f,stroke:#f0883e,color:#e6edf3;
+    classDef ok fill:#1f2a3a,stroke:#58a6ff,color:#e6edf3;
+    class H hot;
+    class F,G cold;
+    class A,B,C1,C2,D,E ok;
+    </div>
+    <p class="caption">캐시 히트(초록)는 거의 모든 호출의 경로. 미스(주황)는 채널/엔드포인트당 단 1회만 발생합니다. <code>second</code> 가 없을 때 자동으로 <code>first</code> 로 폴백하는 점은 점진적 듀얼 엔드포인트 도입에 유리.</p>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- 화면 4. 설정 검증 매트릭스 -->
+  <!-- ============================================ -->
+  <section class="card">
+    <h2>화면 4. 설정 검증 — Fail-fast 매트릭스</h2>
+    <p class="sub">잘못된 YAML 이 어떻게 부팅을 실패시키는지의 의사결정 흐름</p>
+    <div class="mermaid">
+flowchart TB
+    START["애플리케이션 시작\n@SpringBootApplication"]
+    EN{"mido-client.enabled\n== true ?"}
+    SKIP["자동 구성 미동작\n어떤 빈도 등록 안 됨"]
+    BIND["MidoClientProperties\n바인딩 + @Validated"]
+
+    V1{"channels.X.first\n존재?"}
+    V2{"first.url\n@NotBlank +\n^https?://. 패턴"}
+    V3{"timeout 양수?\n@Positive"}
+    V4{"headers name/value\n@NotBlank"}
+    V5{"gzip.min-size\n>= 0 ?"}
+    V6{"gzip.max-decompressed\n> 0 ?"}
+
+    OK["MidoClientFactory 등록\n채널 수 INFO 로그"]
+    FAIL["BindValidationException\n해당 필드명 + 값 노출"]
+
+    START --> EN
+    EN -->|"false"| SKIP
+    EN -->|"true"| BIND
+    BIND --> V1
+    V1 -->|"NO"| FAIL
+    V1 -->|"YES"| V2
+    V2 -->|"위반"| FAIL
+    V2 -->|"통과"| V3
+    V3 -->|"위반"| FAIL
+    V3 -->|"통과"| V4
+    V4 -->|"위반"| FAIL
+    V4 -->|"통과"| V5
+    V5 -->|"위반"| FAIL
+    V5 -->|"통과"| V6
+    V6 -->|"위반"| FAIL
+    V6 -->|"통과"| OK
+
+    classDef good fill:#1d2b1f,stroke:#56d364,color:#e6edf3;
+    classDef bad fill:#2b1f1f,stroke:#f85149,color:#e6edf3;
+    classDef neu fill:#1f2a3a,stroke:#58a6ff,color:#e6edf3;
+    class OK,SKIP good;
+    class FAIL bad;
+    class START,EN,BIND,V1,V2,V3,V4,V5,V6 neu;
+    </div>
+    <p class="caption">"테스트 환경에서는 됐는데 프로덕션 YAML 오타로 운영 중에야 발견" 시나리오를 부팅 시점에 차단하는 안전망입니다. 검증 위반은 즉시 <code>BindValidationException</code> 으로 부팅을 실패시킵니다.</p>
+  </section>
+
+</div>
+
+<footer>
+  생성: 2026-05-15 — 화면 1 아키텍처 · 2 인터셉터 체인 · 3 캐시 룩업 · 4 검증 매트릭스
+</footer>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      primaryColor: '#1f2a3a',
+      primaryTextColor: '#e6edf3',
+      primaryBorderColor: '#58a6ff',
+      lineColor: '#8b949e',
+      tertiaryColor: '#161b22'
+    },
+    flowchart: { useMaxWidth: true, htmlLabels: false, curve: 'basis' },
+    sequence: { useMaxWidth: true, mirrorActors: false }
+  });
+</script>
+
+</body>
+</html>
