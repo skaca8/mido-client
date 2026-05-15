@@ -59,7 +59,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:1.0.5'
+    implementation 'com.github.skaca8:mido-client:1.0.6'
 }
 ```
 
@@ -77,18 +77,18 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```
 
-> To use a specific release, replace `1.0.5` with a tag or a commit hash.
+> To use a specific release, replace `1.0.6` with a tag or a commit hash.
 
 #### via Maven Central (published release)
 
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:1.0.5'
+implementation 'io.github.skaca8:mido-client:1.0.6'
 ```
 
 **Maven**
@@ -98,7 +98,7 @@ implementation 'io.github.skaca8:mido-client:1.0.5'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.0.5</version>
+    <version>1.0.6</version>
 </dependency>
 ```
 
