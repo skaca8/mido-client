@@ -1,6 +1,6 @@
 # Spring Mido Client
 
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.skaca8/mido-client.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/io.github.skaca8/mido-client)
+[![Maven Central](https://mvnrepository.com/artifact/io.github.skaca8/mido-client)](https://central.sonatype.com/artifact/io.github.skaca8/mido-client)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 **[한국어](README.ko.md)** | English
