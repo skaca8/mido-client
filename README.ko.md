@@ -252,6 +252,100 @@ interceptors:
   - "com.example.RequestIdInterceptor"
 ```
 
+> 커스텀 인터셉터는 no-arg public 생성자(`Class.forName(...).getDeclaredConstructor().newInstance()`)로 인스턴스화되므로, 생성자 주입으로 Spring 빈을 받을 수 없습니다. `static` 필드, `@Autowired` 필드 주입(인터셉터를 `@Component`로도 선언하면 Spring이 post-process 해줌), 또는 `ApplicationContextHolder` 패턴 등을 사용하세요.
+
+### 회복성 (Rate Limiter / Circuit Breaker / Retry)
+
+`mido-client`는 의도적으로 회복성(resilience) 레이어를 **내장하지 않습니다** — Resilience4j, Sentinel, Failsafe, Spring Retry 등 원하는 라이브러리를 `interceptors:` 설정으로 직접 끼우세요. 아래는 Resilience4j 기준 복붙용 레시피입니다.
+
+**1. Resilience4j를 애플리케이션 의존성에 추가** (mido-client 본체가 아니라 사용자 앱에):
+
+```gradle
+implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.2.0'
+implementation 'io.github.resilience4j:resilience4j-ratelimiter:2.2.0'
+implementation 'io.github.resilience4j:resilience4j-retry:2.2.0'
+```
+
+**2. Resilience4j 데코레이터로 감싸는 단일 인터셉터 작성:**
+
+```java
+package com.yourapp.interceptor;
+
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
+import io.github.resilience4j.decorators.Decorators;
+import io.github.resilience4j.ratelimiter.RateLimiter;
+import io.github.resilience4j.ratelimiter.RateLimiterConfig;
+import io.github.resilience4j.retry.Retry;
+import io.github.resilience4j.retry.RetryConfig;
+import org.springframework.http.HttpRequest;
+import org.springframework.http.client.ClientHttpRequestExecution;
+import org.springframework.http.client.ClientHttpRequestInterceptor;
+import org.springframework.http.client.ClientHttpResponse;
+
+import java.io.IOException;
+import java.time.Duration;
+
+public class PaymentResilienceInterceptor implements ClientHttpRequestInterceptor {
+
+    private static final RateLimiter RATE_LIMITER = RateLimiter.of("payment",
+            RateLimiterConfig.custom()
+                    .limitForPeriod(100)
+                    .limitRefreshPeriod(Duration.ofSeconds(1))
+                    .timeoutDuration(Duration.ofMillis(500))
+                    .build());
+
+    private static final CircuitBreaker CIRCUIT_BREAKER = CircuitBreaker.of("payment",
+            CircuitBreakerConfig.custom()
+                    .failureRateThreshold(50)
+                    .waitDurationInOpenState(Duration.ofSeconds(30))
+                    .slidingWindowSize(20)
+                    .build());
+
+    private static final Retry RETRY = Retry.of("payment",
+            RetryConfig.custom()
+                    .maxAttempts(3)
+                    .waitDuration(Duration.ofMillis(200))
+                    .build());
+
+    @Override
+    public ClientHttpResponse intercept(HttpRequest request, byte[] body,
+                                        ClientHttpRequestExecution execution) throws IOException {
+        try {
+            return Decorators.ofCallable(() -> execution.execute(request, body))
+                    .withCircuitBreaker(CIRCUIT_BREAKER)
+                    .withRateLimiter(RATE_LIMITER)
+                    .withRetry(RETRY)
+                    .decorate()
+                    .call();
+        } catch (IOException | RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IOException(e);
+        }
+    }
+}
+```
+
+**3. YAML에서 채널에 등록:**
+
+```yaml
+mido-client:
+  channels:
+    payment:
+      first:
+        url: https://api.payment.com
+        interceptors:
+          - "com.yourapp.interceptor.PaymentResilienceInterceptor"
+```
+
+**Tips**:
+
+- 커스텀 인터셉터는 `mido-client`의 로깅 인터셉터보다 **먼저** 등록되므로, 재시도 시도와 rate-limit 대기가 별도 로그 엔트리로 찍힘 — 연쇄 장애 디버깅에 유용.
+- 가능하면 채널당 인터셉터 클래스 1개로 유지하세요. 데코레이터 내부 상태(open/closed 윈도우, 재시도 카운터)는 registry name 기준으로 격리되므로, SLA가 다른 채널끼리 공유하면 cross-talk 발생.
+- 재컴파일 없이 YAML로 튜닝하고 싶다면 앱에 `resilience4j-spring-boot3` starter를 추가하고 `application.yml`에 registry 설정. 인터셉터 안에서 `static final` 대신 채널 이름으로 데코레이터를 조회하면 됩니다.
+- 3개 중 일부만 필요하면(예: rate limiter만) 안 쓰는 데코레이터는 빼세요. 필요한 것만 체이닝하는 게 스택 트레이스도 얕고 동작도 예측 가능.
+
 ### 채널 컨텐트 타입 (JSON / XML)
 
 채널마다 단일 요청 `Content-Type`을 사용합니다. `type`으로 한 번 지정하며, 생략하면 `json`이 적용됩니다.

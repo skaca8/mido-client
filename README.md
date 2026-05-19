@@ -257,6 +257,100 @@ interceptors:
   - "com.example.RequestIdInterceptor"
 ```
 
+> Custom interceptors are instantiated via the no-arg public constructor (`Class.forName(...).getDeclaredConstructor().newInstance()`), so they cannot receive Spring beans through constructor injection. Use `static` fields, `@Autowired` field injection (works because Spring still post-processes the bean if you also declare it as `@Component`), or an `ApplicationContextHolder` pattern.
+
+### Resilience (Rate Limiter / Circuit Breaker / Retry)
+
+`mido-client` intentionally does **not** bundle a resilience layer — bring your own (Resilience4j, Sentinel, Failsafe, Spring Retry, …) via the `interceptors:` config. Below is a copy-paste-ready recipe with Resilience4j.
+
+**1. Add Resilience4j to your application's dependencies** (NOT to `mido-client` itself):
+
+```gradle
+implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.2.0'
+implementation 'io.github.resilience4j:resilience4j-ratelimiter:2.2.0'
+implementation 'io.github.resilience4j:resilience4j-retry:2.2.0'
+```
+
+**2. Write a single interceptor that wraps the call with Resilience4j decorators:**
+
+```java
+package com.yourapp.interceptor;
+
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
+import io.github.resilience4j.decorators.Decorators;
+import io.github.resilience4j.ratelimiter.RateLimiter;
+import io.github.resilience4j.ratelimiter.RateLimiterConfig;
+import io.github.resilience4j.retry.Retry;
+import io.github.resilience4j.retry.RetryConfig;
+import org.springframework.http.HttpRequest;
+import org.springframework.http.client.ClientHttpRequestExecution;
+import org.springframework.http.client.ClientHttpRequestInterceptor;
+import org.springframework.http.client.ClientHttpResponse;
+
+import java.io.IOException;
+import java.time.Duration;
+
+public class PaymentResilienceInterceptor implements ClientHttpRequestInterceptor {
+
+    private static final RateLimiter RATE_LIMITER = RateLimiter.of("payment",
+            RateLimiterConfig.custom()
+                    .limitForPeriod(100)
+                    .limitRefreshPeriod(Duration.ofSeconds(1))
+                    .timeoutDuration(Duration.ofMillis(500))
+                    .build());
+
+    private static final CircuitBreaker CIRCUIT_BREAKER = CircuitBreaker.of("payment",
+            CircuitBreakerConfig.custom()
+                    .failureRateThreshold(50)
+                    .waitDurationInOpenState(Duration.ofSeconds(30))
+                    .slidingWindowSize(20)
+                    .build());
+
+    private static final Retry RETRY = Retry.of("payment",
+            RetryConfig.custom()
+                    .maxAttempts(3)
+                    .waitDuration(Duration.ofMillis(200))
+                    .build());
+
+    @Override
+    public ClientHttpResponse intercept(HttpRequest request, byte[] body,
+                                        ClientHttpRequestExecution execution) throws IOException {
+        try {
+            return Decorators.ofCallable(() -> execution.execute(request, body))
+                    .withCircuitBreaker(CIRCUIT_BREAKER)
+                    .withRateLimiter(RATE_LIMITER)
+                    .withRetry(RETRY)
+                    .decorate()
+                    .call();
+        } catch (IOException | RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IOException(e);
+        }
+    }
+}
+```
+
+**3. Register on the channel via YAML:**
+
+```yaml
+mido-client:
+  channels:
+    payment:
+      first:
+        url: https://api.payment.com
+        interceptors:
+          - "com.yourapp.interceptor.PaymentResilienceInterceptor"
+```
+
+**Tips**:
+
+- Custom interceptors are registered **before** `mido-client`'s logging interceptor, so retry attempts and rate-limit waits show up as separate log entries — useful for debugging cascading failures.
+- Prefer one interceptor class per channel — the decorators' state (open/closed window, retry counters) is keyed by the registry name, so sharing across channels with different SLAs causes cross-talk.
+- For YAML-driven tuning without recompiling, add the `resilience4j-spring-boot3` starter to your app and configure registries in `application.yml`; then look up decorators by channel name inside the interceptor instead of building them as `static final` fields.
+- If you only need one of the three (e.g. rate limiting), drop the unused decorators — chaining only what you need keeps stack traces shallow and behavior predictable.
+
 ### Channel Content Type (JSON / XML)
 
 Each channel sends requests with a single default `Content-Type`. Pick it once per channel via `type`; if omitted, `json` is used.
