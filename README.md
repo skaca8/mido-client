@@ -32,6 +32,7 @@ factory classes, no repeated setup code.
 - **Smart charset detection** — Content-Type header → UTF-8 validation → channel default fallback
 - **Custom interceptors** — register any `ClientHttpRequestInterceptor` by class name in YAML
 - **Per-channel gzip** — opt-in request compression with `min-size` skip threshold; response auto-decompression with decompression-bomb defense cap (`max-decompressed-size`)
+- **Per-channel content type** — pick `json` (default) or `xml` per channel; the request `Content-Type` header is set automatically
 - **Fail-fast configuration validation** — `@Validated` Bean Validation rejects malformed YAML at startup with a `BindValidationException` indicating the offending field
 - **ChannelContext with MDC** — thread-local channel action tracking, integrated with SLF4J MDC for distributed log
   tracing
@@ -114,6 +115,7 @@ mido-client:
     payment:
       title: "Payment Service"
       charset: UTF-8
+      type: json    # json (default) | xml
       first:
         url: https://api.payment.com
         read-timeout-seconds: 30
@@ -188,10 +190,11 @@ public class PaymentService extends BaseExternalApi {
 
 ### Channel (`mido-client.channels.<name>`)
 
-| Property  | Type   | Default | Description                                  |
-|-----------|--------|---------|----------------------------------------------|
-| `title`   | String | -       | Channel description (optional)               |
-| `charset` | String | `UTF-8` | Default character encoding for response body |
+| Property  | Type        | Default | Description                                              |
+|-----------|-------------|---------|----------------------------------------------------------|
+| `title`   | String      | -       | Channel description (optional)                           |
+| `charset` | String      | `UTF-8` | Default character encoding for response body             |
+| `type`    | ContentType | `json`  | Request `Content-Type` for the channel — `json` / `xml` |
 
 ### Endpoint (`first` / `second`)
 
@@ -227,6 +230,7 @@ public class PaymentService extends BaseExternalApi {
 - `gzip.max-decompressed-size` is zero or negative
 - `headers[].name` or `headers[].value` is blank
 - A channel is missing its required `first` endpoint
+- `type` is explicitly set to `null` (must be `json` or `xml`; unknown values are rejected separately by Spring's enum binder at startup)
 
 ## Advanced Usage
 
@@ -252,6 +256,28 @@ public class RequestIdInterceptor implements ClientHttpRequestInterceptor {
 interceptors:
   - "com.example.RequestIdInterceptor"
 ```
+
+### Channel Content Type (JSON / XML)
+
+Each channel sends requests with a single default `Content-Type`. Pick it once per channel via `type`; if omitted, `json` is used.
+
+```yaml
+mido-client:
+  channels:
+    legacySoap:
+      type: xml             # outgoing Content-Type: application/xml
+      first:
+        url: https://soap.example.com
+    modernRest:
+      # type omitted → defaults to json
+      first:
+        url: https://api.example.com
+```
+
+**Behavior**:
+
+- `type: json` (default) — `Content-Type: application/json` is attached to every request; POJO bodies are serialized via Jackson.
+- `type: xml` — `Content-Type: application/xml` is attached to every request. Provide the body as a pre-serialized XML `String` (Jackson XML marshalling is not bundled — bring your own converter via `interceptors` if you need POJO ↔ XML).
 
 ### Gzip Compression
 

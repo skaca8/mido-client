@@ -1,5 +1,6 @@
 package io.github.hyunjun.mido.config;
 
+import io.github.hyunjun.mido.constant.ContentType;
 import io.github.hyunjun.mido.constant.LogLevel;
 import io.github.hyunjun.mido.constant.TokenType;
 import org.junit.jupiter.api.Test;
@@ -194,6 +195,53 @@ class MidoClientAutoConfigurationTest {
                     MidoClientProperties properties = context.getBean(MidoClientProperties.class);
                     MidoClientProperties.Gzip gzip = properties.getChannels().get("test").getFirst().getGzip();
                     assertThat(gzip.getMaxDecompressedSize()).isEqualTo(20 * 1024 * 1024);
+                });
+    }
+
+    @Test
+    void shouldDefaultChannelTypeToJsonWhenNotConfigured() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.first.url=https://api.test.com"
+                )
+                .run(context -> {
+                    MidoClientProperties properties = context.getBean(MidoClientProperties.class);
+                    MidoClientProperties.ChannelConfig channelConfig = properties.getChannels().get("test");
+
+                    assertThat(channelConfig.getType()).isEqualTo(ContentType.JSON);
+                });
+    }
+
+    @Test
+    void shouldBindChannelTypeXmlFromYaml() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.type=xml",
+                        "mido-client.channels.test.first.url=https://api.test.com"
+                )
+                .run(context -> {
+                    MidoClientProperties properties = context.getBean(MidoClientProperties.class);
+                    MidoClientProperties.ChannelConfig channelConfig = properties.getChannels().get("test");
+
+                    assertThat(channelConfig.getType()).isEqualTo(ContentType.XML);
+                });
+    }
+
+    @Test
+    void shouldBindChannelTypeJsonFromYaml() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.type=json",
+                        "mido-client.channels.test.first.url=https://api.test.com"
+                )
+                .run(context -> {
+                    MidoClientProperties properties = context.getBean(MidoClientProperties.class);
+                    MidoClientProperties.ChannelConfig channelConfig = properties.getChannels().get("test");
+
+                    assertThat(channelConfig.getType()).isEqualTo(ContentType.JSON);
                 });
     }
 

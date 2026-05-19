@@ -1,15 +1,23 @@
 package io.github.hyunjun.mido.config;
 
+import io.github.hyunjun.mido.constant.ContentType;
 import io.github.hyunjun.mido.constant.EndpointType;
 import io.github.hyunjun.mido.constant.LogLevel;
 import io.github.hyunjun.mido.constant.TokenType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class MidoClientFactoryTest {
 
@@ -160,6 +168,100 @@ class MidoClientFactoryTest {
         assertThat(endpoint.getGzip().getResponse()).isFalse();
         assertThat(endpoint.getGzip().getMinSize()).isEqualTo(1024);
         assertThat(endpoint.getGzip().getMaxDecompressedSize()).isEqualTo(10 * 1024 * 1024);
+    }
+
+    @Test
+    void shouldDefaultToJsonContentTypeWhenNotConfigured() {
+        // Given
+        MidoClientProperties.ChannelConfig channelConfig = new MidoClientProperties.ChannelConfig();
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+        endpoint.setUrl("https://default-type.test.com");
+        channelConfig.setFirst(endpoint);
+        properties.getChannels().put("defaultType", channelConfig);
+
+        // When
+        RestClient client = factory.getOrCreateClient("defaultType");
+
+        // Then
+        assertThat(client).isNotNull();
+        assertThat(channelConfig.getType()).isEqualTo(ContentType.JSON);
+    }
+
+    @Test
+    void shouldCreateClientWithXmlContentType() {
+        // Given
+        MidoClientProperties.ChannelConfig channelConfig = new MidoClientProperties.ChannelConfig();
+        channelConfig.setType(ContentType.XML);
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+        endpoint.setUrl("https://xml.test.com");
+        channelConfig.setFirst(endpoint);
+        properties.getChannels().put("xmlChannel", channelConfig);
+
+        // When
+        RestClient client = factory.getOrCreateClient("xmlChannel");
+
+        // Then
+        assertThat(client).isNotNull();
+        assertThat(channelConfig.getType()).isEqualTo(ContentType.XML);
+    }
+
+    @Test
+    void shouldBuildClientViaThreeArgBaseRestClientOverload() {
+        // Given - back-compat 3-arg overload contract
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+        endpoint.setUrl("https://overload.test.com");
+        endpoint.setLog(LogLevel.OFF);
+
+        // When
+        RestClient.Builder builder = factory.baseRestClient(endpoint.getUrl(), endpoint, StandardCharsets.UTF_8);
+
+        // Then
+        assertThat(builder).isNotNull();
+        assertThat(builder.build()).isNotNull();
+    }
+
+    @Test
+    void shouldSendJsonContentTypeHeaderByDefault() {
+        // Given
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+        endpoint.setUrl("https://json-hdr.test.com");
+        endpoint.setLog(LogLevel.OFF);
+
+        RestClient.Builder builder = factory.baseRestClient(endpoint.getUrl(), endpoint, StandardCharsets.UTF_8);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        RestClient client = builder.build();
+
+        server.expect(requestTo("https://json-hdr.test.com/test"))
+                .andExpect(header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE))
+                .andRespond(withSuccess());
+
+        // When
+        client.get().uri("/test").retrieve().toBodilessEntity();
+
+        // Then
+        server.verify();
+    }
+
+    @Test
+    void shouldSendXmlContentTypeHeaderWhenContentTypeIsXml() {
+        // Given
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+        endpoint.setUrl("https://xml-hdr.test.com");
+        endpoint.setLog(LogLevel.OFF);
+
+        RestClient.Builder builder = factory.baseRestClient(endpoint.getUrl(), endpoint, StandardCharsets.UTF_8, ContentType.XML);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        RestClient client = builder.build();
+
+        server.expect(requestTo("https://xml-hdr.test.com/test"))
+                .andExpect(header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_XML_VALUE))
+                .andRespond(withSuccess());
+
+        // When
+        client.get().uri("/test").retrieve().toBodilessEntity();
+
+        // Then
+        server.verify();
     }
 
     @Test

@@ -1,5 +1,6 @@
 package io.github.hyunjun.mido.config;
 
+import io.github.hyunjun.mido.constant.ContentType;
 import io.github.hyunjun.mido.constant.LogLevel;
 import io.github.hyunjun.mido.constant.TokenType;
 import jakarta.validation.Valid;
@@ -40,6 +41,9 @@ public class MidoClientProperties {
         String title;
 
         String charset = "UTF-8";
+
+        @NotNull
+        ContentType type = ContentType.JSON;
 
         @Valid
         @NotNull

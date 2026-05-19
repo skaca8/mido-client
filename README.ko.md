@@ -30,6 +30,7 @@
 - **스마트 인코딩 감지** — Content-Type 헤더 → UTF-8 유효성 검사 → 채널 기본값 순으로 자동 결정
 - **커스텀 인터셉터** — `ClientHttpRequestInterceptor` 구현체를 YAML에 클래스명으로 등록
 - **채널별 gzip 압축** — 요청 바디는 `min-size` 임계값 이상일 때만 압축, 응답은 자동 해제 + 압축 폭탄 방어 cap(`max-decompressed-size`)
+- **채널별 컨텐트 타입** — `json`(기본) / `xml` 중 채널 단위로 선택, 요청 `Content-Type` 헤더가 자동 설정됨
 - **부팅 시 설정 검증** — `@Validated` Bean Validation으로 잘못된 YAML을 시작 시점에 거부, `BindValidationException`에 어떤 필드가 잘못되었는지 명시
 - **ChannelContext + MDC 연동** — 스레드 로컬 채널 액션 추적, SLF4J MDC와 통합되어 로그에 자동 포함
 - **자동 설정** — `mido-client.enabled: true` 프로퍼티 하나로 활성화
@@ -110,6 +111,7 @@ mido-client:
     payment:
       title: "결제 서비스"
       charset: UTF-8
+      type: json    # json (기본값) | xml
       first:
         url: https://api.payment.com
         read-timeout-seconds: 30
@@ -183,10 +185,11 @@ public class PaymentService extends BaseExternalApi {
 
 ### 채널 설정 (`mido-client.channels.<name>`)
 
-| 프로퍼티      | 타입     | 기본값     | 설명           |
-|-----------|--------|---------|--------------|
-| `title`   | String | -       | 채널 설명 (선택사항) |
-| `charset` | String | `UTF-8` | 응답 바디 기본 인코딩 |
+| 프로퍼티      | 타입          | 기본값     | 설명                                       |
+|-----------|-------------|---------|------------------------------------------|
+| `title`   | String      | -       | 채널 설명 (선택사항)                             |
+| `charset` | String      | `UTF-8` | 응답 바디 기본 인코딩                             |
+| `type`    | ContentType | `json`  | 채널 요청 `Content-Type` — `json` / `xml` 지원 |
 
 ### 엔드포인트 설정 (`first` / `second`)
 
@@ -222,6 +225,7 @@ public class PaymentService extends BaseExternalApi {
 - `gzip.max-decompressed-size`가 0 이하
 - `headers[].name` 또는 `headers[].value`가 비어있음
 - 채널에 필수 `first` 엔드포인트가 없음
+- `type`이 명시적으로 `null`로 지정됨 (값은 `json` 또는 `xml`이어야 함 — 그 외 값은 Spring enum 바인더가 시작 시점에 별도로 거부)
 
 ## 고급 사용법
 
@@ -247,6 +251,28 @@ public class RequestIdInterceptor implements ClientHttpRequestInterceptor {
 interceptors:
   - "com.example.RequestIdInterceptor"
 ```
+
+### 채널 컨텐트 타입 (JSON / XML)
+
+채널마다 단일 요청 `Content-Type`을 사용합니다. `type`으로 한 번 지정하며, 생략하면 `json`이 적용됩니다.
+
+```yaml
+mido-client:
+  channels:
+    legacySoap:
+      type: xml             # 요청 Content-Type: application/xml
+      first:
+        url: https://soap.example.com
+    modernRest:
+      # type 생략 → 기본값 json
+      first:
+        url: https://api.example.com
+```
+
+**동작**:
+
+- `type: json` (기본값) — 모든 요청에 `Content-Type: application/json` 헤더가 자동 추가되고, POJO 바디는 Jackson으로 직렬화됩니다.
+- `type: xml` — 모든 요청에 `Content-Type: application/xml` 헤더가 자동 추가됩니다. 바디는 직렬화된 XML `String`으로 전달하세요 (Jackson XML 마샬링은 기본 번들에 포함되어 있지 않습니다 — POJO ↔ XML 변환이 필요하면 `interceptors`로 직접 컨버터를 등록하세요).
 
 ### Gzip 압축
 

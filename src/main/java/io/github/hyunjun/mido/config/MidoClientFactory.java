@@ -1,5 +1,6 @@
 package io.github.hyunjun.mido.config;
 
+import io.github.hyunjun.mido.constant.ContentType;
 import io.github.hyunjun.mido.constant.EndpointType;
 import io.github.hyunjun.mido.constant.LogLevel;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,11 @@ public class MidoClientFactory {
     private final Map<String, RestClient> clientCache = new ConcurrentHashMap<>();
 
     public RestClient.Builder baseRestClient(String baseUrl, MidoClientProperties.EndpointConfig endpointConfig, Charset charset) {
+        // 외부 호환성을 위한 오버로드 — Content-Type 미지정 시 JSON
+        return baseRestClient(baseUrl, endpointConfig, charset, ContentType.JSON);
+    }
+
+    public RestClient.Builder baseRestClient(String baseUrl, MidoClientProperties.EndpointConfig endpointConfig, Charset charset, ContentType contentType) {
         BufferingClientHttpRequestFactory requestFactory = createRequestFactory(
                 endpointConfig.getConnectTimeoutSeconds(),
                 endpointConfig.getReadTimeoutSeconds()
@@ -37,7 +43,7 @@ public class MidoClientFactory {
                 .baseUrl(baseUrl)
                 .requestFactory(requestFactory)
                 .messageConverters(converters -> configureMessageConverters(converters, charset))
-                .defaultHeaders(headers -> configureHeaders(headers, endpointConfig.getAuthorization(), endpointConfig.getHeaders()))
+                .defaultHeaders(headers -> configureHeaders(headers, endpointConfig.getAuthorization(), endpointConfig.getHeaders(), contentType))
                 .requestInterceptors(interceptors -> interceptors.addAll(createInterceptors(endpointConfig.getInterceptors(), endpointConfig.getLog(), charset, endpointConfig.getGzip())));
     }
 
@@ -67,7 +73,8 @@ public class MidoClientFactory {
             return baseRestClient(
                     endpointConfig.getUrl(),
                     endpointConfig,
-                    charset
+                    charset,
+                    channelConfig.getType()
             ).build();
         } catch (Exception e) {
             String configType = endpointType != null ? endpointType.getValue() : "first";
@@ -130,9 +137,9 @@ public class MidoClientFactory {
         }
     }
 
-    private void configureHeaders(HttpHeaders headers, MidoClientProperties.Authorization authorization, List<MidoClientProperties.Header> customHeaders) {
+    private void configureHeaders(HttpHeaders headers, MidoClientProperties.Authorization authorization, List<MidoClientProperties.Header> customHeaders, ContentType contentType) {
         headers.add(HttpHeaders.ACCEPT, MediaType.ALL_VALUE);
-        headers.add(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
+        headers.add(HttpHeaders.CONTENT_TYPE, contentType.getMediaType().toString());
 
         addAuthorizationHeader(headers, authorization);
         addCustomHeaders(headers, customHeaders);
@@ -159,11 +166,13 @@ public class MidoClientFactory {
         StringHttpMessageConverter stringConverter = new StringHttpMessageConverter(charset);
         stringConverter.setWriteAcceptCharset(false);
 
-        // application/json도 String으로 처리하도록 설정
+        // application/json, application/xml 등도 String 으로 처리하도록 설정
         stringConverter.setSupportedMediaTypes(Arrays.asList(
                 MediaType.TEXT_PLAIN,
                 MediaType.TEXT_HTML,
+                MediaType.TEXT_XML,
                 MediaType.APPLICATION_JSON,
+                MediaType.APPLICATION_XML,
                 MediaType.ALL
         ));
 
