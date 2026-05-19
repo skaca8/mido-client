@@ -69,3 +69,5 @@ bin/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+.claude/
