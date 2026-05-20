@@ -28,7 +28,7 @@ public class PaymentService extends BaseExternalApi {
     }
 
     /**
-     * 결제 상태 조회 (first endpoint 사용)
+     * 결제 상태 조회 (primary endpoint 사용)
      */
     public PaymentStatus getPaymentStatus(String paymentId) {
         return withDefaultChannelAction("getPaymentStatus", () -> {
@@ -42,11 +42,11 @@ public class PaymentService extends BaseExternalApi {
     }
 
     /**
-     * 결제 처리 (second endpoint 사용 - 결제 처리 전용 서버)
+     * 결제 처리 (secondary endpoint 사용 - 결제 처리 전용 서버)
      */
     public PaymentResult processPayment(PaymentRequest request) {
         return withDefaultChannelAction("processPayment", () -> {
-            RestClient client = midoClientFactory.getOrCreateClient("payment", EndpointType.SECOND);
+            RestClient client = midoClientFactory.getOrCreateClient("payment", EndpointType.SECONDARY);
 
             return client.post()
                     .uri("/payments/process")

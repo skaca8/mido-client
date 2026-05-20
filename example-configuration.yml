@@ -8,7 +8,7 @@ mido-client:
     auth:
       title: "인증 서버"
       charset: UTF-8
-      first:
+      primary:
         title: "Auth API"
         url: https://auth.skaca8.com
         read-timeout-seconds: 60
@@ -25,7 +25,7 @@ mido-client:
     payment:
       title: "결제 서버"
       charset: UTF-8
-      first:
+      primary:
         title: "결제 조회 서버"
         url: https://payment.skaca8.com
         read-timeout-seconds: 30
@@ -34,7 +34,7 @@ mido-client:
           type: bearer
           token: payment-query-token
         log: all
-      second:
+      secondary:
         title: "결제 저장 서버"
         url: https://payment-save.skaca8.com
         read-timeout-seconds: 120
@@ -51,7 +51,7 @@ mido-client:
     legacy-system:
       title: "Legacy System"
       charset: EUC-KR
-      first:
+      primary:
         url: https://legacy.example.com
         authorization:
           type: basic
@@ -66,7 +66,7 @@ mido-client:
     # Simple notification service
     notification:
       title: "알림 서비스"
-      first:
+      primary:
         url: https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
         read-timeout-seconds: 10
         connect-timeout-seconds: 2

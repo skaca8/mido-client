@@ -23,7 +23,7 @@
 
 ## 주요 기능
 
-- **멀티채널 지원** — 채널 수 제한 없이 정의 가능하며, 각 채널은 `first` / `second` 이중 엔드포인트를 가질 수 있음
+- **멀티채널 지원** — 채널 수 제한 없이 정의 가능하며, 각 채널은 `primary` / `secondary` 이중 엔드포인트를 가질 수 있음
 - **클라이언트 자동 캐싱** — 채널/엔드포인트 조합별로 `RestClient` 인스턴스를 `ConcurrentHashMap`으로 캐싱, 스레드 안전
 - **4단계 로깅** — `off` / `console` / `file` / `all`, 요청/응답 바디, URL, 응답시간 포함
 - **엔드포인트별 인증** — Bearer, Basic, API Key 방식 지원
@@ -59,7 +59,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:1.0.7'
+    implementation 'com.github.skaca8:mido-client:1.1.0'
 }
 ```
 
@@ -77,18 +77,18 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.0.7</version>
+    <version>1.1.0</version>
 </dependency>
 ```
 
-> 특정 릴리즈를 사용하려면 `1.0.7`을 원하는 태그 또는 커밋 해시로 변경하세요.
+> 특정 릴리즈를 사용하려면 `1.1.0`을 원하는 태그 또는 커밋 해시로 변경하세요.
 
 #### Maven Central을 통한 방법 (정식 릴리즈)
 
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:1.0.7'
+implementation 'io.github.skaca8:mido-client:1.1.0'
 ```
 
 **Maven**
@@ -98,7 +98,7 @@ implementation 'io.github.skaca8:mido-client:1.0.7'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.0.7</version>
+    <version>1.1.0</version>
 </dependency>
 ```
 
@@ -112,7 +112,7 @@ mido-client:
       title: "결제 서비스"
       charset: UTF-8
       type: json    # json (기본값) | xml
-      first:
+      primary:
         url: https://api.payment.com
         read-timeout-seconds: 30
         connect-timeout-seconds: 5
@@ -120,7 +120,7 @@ mido-client:
           type: bearer
           token: ${PAYMENT_QUERY_TOKEN}
         log: console
-      second: # 선택사항: 동일 서비스의 두 번째 엔드포인트
+      secondary: # 선택사항: 동일 서비스의 두 번째 엔드포인트
         url: https://process.payment.com
         read-timeout-seconds: 60
         authorization:
@@ -128,7 +128,7 @@ mido-client:
           token: ${PAYMENT_PROCESS_TOKEN}
         log: all
     auth:
-      first:
+      primary:
         url: https://auth.example.com
         authorization:
           type: bearer
@@ -150,7 +150,7 @@ public class PaymentService extends BaseExternalApi {
 
     public PaymentService(MidoClientFactory midoClientFactory) {
         this.queryClient = midoClientFactory.getOrCreateClient("payment");
-        this.processClient = midoClientFactory.getOrCreateClient("payment", EndpointType.SECOND);
+        this.processClient = midoClientFactory.getOrCreateClient("payment", EndpointType.SECONDARY);
     }
 
     @Override
@@ -191,7 +191,7 @@ public class PaymentService extends BaseExternalApi {
 | `charset` | String      | `UTF-8` | 응답 바디 기본 인코딩                             |
 | `type`    | ContentType | `json`  | 채널 요청 `Content-Type` — `json` / `xml` 지원 |
 
-### 엔드포인트 설정 (`first` / `second`)
+### 엔드포인트 설정 (`primary` / `secondary`)
 
 | 프로퍼티                      | 타입             | 기본값       | 설명                                             |
 |---------------------------|----------------|-----------|------------------------------------------------|
@@ -224,7 +224,7 @@ public class PaymentService extends BaseExternalApi {
 - `gzip.min-size`가 음수
 - `gzip.max-decompressed-size`가 0 이하
 - `headers[].name` 또는 `headers[].value`가 비어있음
-- 채널에 필수 `first` 엔드포인트가 없음
+- 채널에 필수 `primary` 엔드포인트가 없음
 - `type`이 명시적으로 `null`로 지정됨 (값은 `json` 또는 `xml`이어야 함 — 그 외 값은 Spring enum 바인더가 시작 시점에 별도로 거부)
 
 ## 고급 사용법
@@ -333,7 +333,7 @@ public class PaymentResilienceInterceptor implements ClientHttpRequestIntercepto
 mido-client:
   channels:
     payment:
-      first:
+      primary:
         url: https://api.payment.com
         interceptors:
           - "com.yourapp.interceptor.PaymentResilienceInterceptor"
@@ -355,11 +355,11 @@ mido-client:
   channels:
     legacySoap:
       type: xml             # 요청 Content-Type: application/xml
-      first:
+      primary:
         url: https://soap.example.com
     modernRest:
       # type 생략 → 기본값 json
-      first:
+      primary:
         url: https://api.example.com
 ```
 
@@ -376,7 +376,7 @@ mido-client:
 mido-client:
   channels:
     payment:
-      first:
+      primary:
         url: https://api.payment.com
         gzip:
           request: true                    # 요청 바디 압축

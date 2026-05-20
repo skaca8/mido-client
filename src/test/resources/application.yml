@@ -5,7 +5,7 @@ mido-client:
     payment:
       title: "Payment Service"
       charset: UTF-8
-      first:
+      primary:
         url: https://api.payment.com
         read-timeout-seconds: 30
         connect-timeout-seconds: 5
@@ -13,7 +13,7 @@ mido-client:
         authorization:
           type: bearer
           token: payment-query-token
-      second:
+      secondary:
         url: https://process.payment.com
         read-timeout-seconds: 60
         connect-timeout-seconds: 3
@@ -24,7 +24,7 @@ mido-client:
 
     auth:
       title: "Authentication Service"
-      first:
+      primary:
         url: https://auth.example.com
         authorization:
           type: bearer
@@ -35,7 +35,7 @@ mido-client:
 
     notification:
       title: "Notification Service"
-      first:
+      primary:
         url: https://hooks.slack.com/services/TEST/WEBHOOK/URL
         read-timeout-seconds: 10
         connect-timeout-seconds: 2
@@ -44,7 +44,7 @@ mido-client:
     jsonplaceholder:
       title: "JSONPlaceholder Test API"
       charset: UTF-8
-      first:
+      primary:
         url: https://jsonplaceholder.typicode.com
         read-timeout-seconds: 10
         connect-timeout-seconds: 5

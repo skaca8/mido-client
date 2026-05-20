@@ -50,14 +50,14 @@ class MidoClientAutoConfigurationTest {
                         "mido-client.enabled=true",
                         "mido-client.channels.test.title=Test Channel",
                         "mido-client.channels.test.charset=UTF-8",
-                        "mido-client.channels.test.first.url=https://api.test.com",
-                        "mido-client.channels.test.first.read-timeout-seconds=30",
-                        "mido-client.channels.test.first.connect-timeout-seconds=5",
-                        "mido-client.channels.test.first.log=console",
-                        "mido-client.channels.test.first.authorization.type=bearer",
-                        "mido-client.channels.test.first.authorization.token=test-token",
-                        "mido-client.channels.test.first.headers[0].name=X-Custom-Header",
-                        "mido-client.channels.test.first.headers[0].value=custom-value"
+                        "mido-client.channels.test.primary.url=https://api.test.com",
+                        "mido-client.channels.test.primary.read-timeout-seconds=30",
+                        "mido-client.channels.test.primary.connect-timeout-seconds=5",
+                        "mido-client.channels.test.primary.log=console",
+                        "mido-client.channels.test.primary.authorization.type=bearer",
+                        "mido-client.channels.test.primary.authorization.token=test-token",
+                        "mido-client.channels.test.primary.headers[0].name=X-Custom-Header",
+                        "mido-client.channels.test.primary.headers[0].value=custom-value"
                 )
                 .run(context -> {
                     assertThat(context).hasSingleBean(MidoClientProperties.class);
@@ -70,19 +70,19 @@ class MidoClientAutoConfigurationTest {
                     assertThat(channelConfig.getTitle()).isEqualTo("Test Channel");
                     assertThat(channelConfig.getCharset()).isEqualTo("UTF-8");
 
-                    MidoClientProperties.EndpointConfig firstEndpoint = channelConfig.getFirst();
-                    assertThat(firstEndpoint.getUrl()).isEqualTo("https://api.test.com");
-                    assertThat(firstEndpoint.getReadTimeoutSeconds()).isEqualTo(30L);
-                    assertThat(firstEndpoint.getConnectTimeoutSeconds()).isEqualTo(5L);
-                    assertThat(firstEndpoint.getLog()).isEqualTo(LogLevel.CONSOLE);
+                    MidoClientProperties.EndpointConfig primaryEndpoint = channelConfig.getPrimary();
+                    assertThat(primaryEndpoint.getUrl()).isEqualTo("https://api.test.com");
+                    assertThat(primaryEndpoint.getReadTimeoutSeconds()).isEqualTo(30L);
+                    assertThat(primaryEndpoint.getConnectTimeoutSeconds()).isEqualTo(5L);
+                    assertThat(primaryEndpoint.getLog()).isEqualTo(LogLevel.CONSOLE);
 
-                    assertThat(firstEndpoint.getAuthorization()).isNotNull();
-                    assertThat(firstEndpoint.getAuthorization().getType()).isEqualTo(TokenType.BEARER);
-                    assertThat(firstEndpoint.getAuthorization().getToken()).isEqualTo("test-token");
+                    assertThat(primaryEndpoint.getAuthorization()).isNotNull();
+                    assertThat(primaryEndpoint.getAuthorization().getType()).isEqualTo(TokenType.BEARER);
+                    assertThat(primaryEndpoint.getAuthorization().getToken()).isEqualTo("test-token");
 
-                    assertThat(firstEndpoint.getHeaders()).hasSize(1);
-                    assertThat(firstEndpoint.getHeaders().get(0).getName()).isEqualTo("X-Custom-Header");
-                    assertThat(firstEndpoint.getHeaders().get(0).getValue()).isEqualTo("custom-value");
+                    assertThat(primaryEndpoint.getHeaders()).hasSize(1);
+                    assertThat(primaryEndpoint.getHeaders().get(0).getName()).isEqualTo("X-Custom-Header");
+                    assertThat(primaryEndpoint.getHeaders().get(0).getValue()).isEqualTo("custom-value");
                 });
     }
 
@@ -91,14 +91,14 @@ class MidoClientAutoConfigurationTest {
         contextRunner
                 .withPropertyValues(
                         "mido-client.enabled=true",
-                        "mido-client.channels.test.first.url=https://api.test.com",
-                        "mido-client.channels.test.first.gzip.request=true",
-                        "mido-client.channels.test.first.gzip.response=true",
-                        "mido-client.channels.test.first.gzip.min-size=2048"
+                        "mido-client.channels.test.primary.url=https://api.test.com",
+                        "mido-client.channels.test.primary.gzip.request=true",
+                        "mido-client.channels.test.primary.gzip.response=true",
+                        "mido-client.channels.test.primary.gzip.min-size=2048"
                 )
                 .run(context -> {
                     MidoClientProperties properties = context.getBean(MidoClientProperties.class);
-                    MidoClientProperties.Gzip gzip = properties.getChannels().get("test").getFirst().getGzip();
+                    MidoClientProperties.Gzip gzip = properties.getChannels().get("test").getPrimary().getGzip();
 
                     assertThat(gzip).isNotNull();
                     assertThat(gzip.getRequest()).isTrue();
@@ -112,7 +112,7 @@ class MidoClientAutoConfigurationTest {
         contextRunner
                 .withPropertyValues(
                         "mido-client.enabled=true",
-                        "mido-client.channels.test.first.url="
+                        "mido-client.channels.test.primary.url="
                 )
                 .run(context -> assertThat(context).hasFailed()
                         .getFailure()
@@ -124,7 +124,7 @@ class MidoClientAutoConfigurationTest {
         contextRunner
                 .withPropertyValues(
                         "mido-client.enabled=true",
-                        "mido-client.channels.test.first.url=ftp://nope"
+                        "mido-client.channels.test.primary.url=ftp://nope"
                 )
                 .run(context -> assertThat(context).hasFailed()
                         .getFailure()
@@ -136,8 +136,8 @@ class MidoClientAutoConfigurationTest {
         contextRunner
                 .withPropertyValues(
                         "mido-client.enabled=true",
-                        "mido-client.channels.test.first.url=https://api.test.com",
-                        "mido-client.channels.test.first.read-timeout-seconds=0"
+                        "mido-client.channels.test.primary.url=https://api.test.com",
+                        "mido-client.channels.test.primary.read-timeout-seconds=0"
                 )
                 .run(context -> assertThat(context).hasFailed()
                         .getFailure()
@@ -149,8 +149,8 @@ class MidoClientAutoConfigurationTest {
         contextRunner
                 .withPropertyValues(
                         "mido-client.enabled=true",
-                        "mido-client.channels.test.first.url=https://api.test.com",
-                        "mido-client.channels.test.first.gzip.max-decompressed-size=0"
+                        "mido-client.channels.test.primary.url=https://api.test.com",
+                        "mido-client.channels.test.primary.gzip.max-decompressed-size=0"
                 )
                 .run(context -> assertThat(context).hasFailed()
                         .getFailure()
@@ -162,9 +162,9 @@ class MidoClientAutoConfigurationTest {
         contextRunner
                 .withPropertyValues(
                         "mido-client.enabled=true",
-                        "mido-client.channels.test.first.url=https://api.test.com",
-                        "mido-client.channels.test.first.headers[0].name=",
-                        "mido-client.channels.test.first.headers[0].value=v"
+                        "mido-client.channels.test.primary.url=https://api.test.com",
+                        "mido-client.channels.test.primary.headers[0].name=",
+                        "mido-client.channels.test.primary.headers[0].value=v"
                 )
                 .run(context -> assertThat(context).hasFailed()
                         .getFailure()
@@ -172,15 +172,15 @@ class MidoClientAutoConfigurationTest {
     }
 
     @Test
-    void shouldFailValidationWhenChannelFirstIsMissing() {
+    void shouldFailValidationWhenChannelPrimaryIsMissing() {
         contextRunner
                 .withPropertyValues(
                         "mido-client.enabled=true",
-                        "mido-client.channels.test.title=No First Endpoint"
+                        "mido-client.channels.test.title=No Primary Endpoint"
                 )
                 .run(context -> assertThat(context).hasFailed()
                         .getFailure()
-                        .hasStackTraceContaining("'first'"));
+                        .hasStackTraceContaining("'primary'"));
     }
 
     @Test
@@ -188,12 +188,12 @@ class MidoClientAutoConfigurationTest {
         contextRunner
                 .withPropertyValues(
                         "mido-client.enabled=true",
-                        "mido-client.channels.test.first.url=https://api.test.com",
-                        "mido-client.channels.test.first.gzip.max-decompressed-size=20971520"
+                        "mido-client.channels.test.primary.url=https://api.test.com",
+                        "mido-client.channels.test.primary.gzip.max-decompressed-size=20971520"
                 )
                 .run(context -> {
                     MidoClientProperties properties = context.getBean(MidoClientProperties.class);
-                    MidoClientProperties.Gzip gzip = properties.getChannels().get("test").getFirst().getGzip();
+                    MidoClientProperties.Gzip gzip = properties.getChannels().get("test").getPrimary().getGzip();
                     assertThat(gzip.getMaxDecompressedSize()).isEqualTo(20 * 1024 * 1024);
                 });
     }
@@ -203,7 +203,7 @@ class MidoClientAutoConfigurationTest {
         contextRunner
                 .withPropertyValues(
                         "mido-client.enabled=true",
-                        "mido-client.channels.test.first.url=https://api.test.com"
+                        "mido-client.channels.test.primary.url=https://api.test.com"
                 )
                 .run(context -> {
                     MidoClientProperties properties = context.getBean(MidoClientProperties.class);
@@ -219,7 +219,7 @@ class MidoClientAutoConfigurationTest {
                 .withPropertyValues(
                         "mido-client.enabled=true",
                         "mido-client.channels.test.type=xml",
-                        "mido-client.channels.test.first.url=https://api.test.com"
+                        "mido-client.channels.test.primary.url=https://api.test.com"
                 )
                 .run(context -> {
                     MidoClientProperties properties = context.getBean(MidoClientProperties.class);
@@ -235,7 +235,7 @@ class MidoClientAutoConfigurationTest {
                 .withPropertyValues(
                         "mido-client.enabled=true",
                         "mido-client.channels.test.type=json",
-                        "mido-client.channels.test.first.url=https://api.test.com"
+                        "mido-client.channels.test.primary.url=https://api.test.com"
                 )
                 .run(context -> {
                     MidoClientProperties properties = context.getBean(MidoClientProperties.class);
@@ -250,11 +250,11 @@ class MidoClientAutoConfigurationTest {
         contextRunner
                 .withPropertyValues(
                         "mido-client.enabled=true",
-                        "mido-client.channels.test.first.url=https://api.test.com"
+                        "mido-client.channels.test.primary.url=https://api.test.com"
                 )
                 .run(context -> {
                     MidoClientProperties properties = context.getBean(MidoClientProperties.class);
-                    MidoClientProperties.Gzip gzip = properties.getChannels().get("test").getFirst().getGzip();
+                    MidoClientProperties.Gzip gzip = properties.getChannels().get("test").getPrimary().getGzip();
 
                     assertThat(gzip).isNotNull();
                     assertThat(gzip.getRequest()).isFalse();

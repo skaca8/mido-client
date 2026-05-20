@@ -47,10 +47,10 @@ public class MidoClientProperties {
 
         @Valid
         @NotNull
-        EndpointConfig first;
+        EndpointConfig primary;
 
         @Valid
-        EndpointConfig second;
+        EndpointConfig secondary;
 
     }
 

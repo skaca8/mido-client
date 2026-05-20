@@ -48,7 +48,7 @@ public class MidoClientFactory {
     }
 
     public RestClient getOrCreateClient(String channelName) {
-        String cacheKey = channelName.toLowerCase() + "-first";
+        String cacheKey = channelName.toLowerCase() + "-primary";
         return clientCache.computeIfAbsent(cacheKey, k -> createClient(channelName, null));
     }
 
@@ -63,7 +63,7 @@ public class MidoClientFactory {
             MidoClientProperties.EndpointConfig endpointConfig = getEndpointConfig(channelConfig, endpointType);
 
             if (endpointConfig == null || endpointConfig.getUrl() == null || endpointConfig.getUrl().trim().isEmpty()) {
-                String configType = endpointType != null ? endpointType.getValue() : "first";
+                String configType = endpointType != null ? endpointType.getValue() : "primary";
                 throw new IllegalArgumentException("URL is not configured for channel: " + channelName + ", type: " + configType);
             }
 
@@ -77,17 +77,17 @@ public class MidoClientFactory {
                     channelConfig.getType()
             ).build();
         } catch (Exception e) {
-            String configType = endpointType != null ? endpointType.getValue() : "first";
+            String configType = endpointType != null ? endpointType.getValue() : "primary";
             throw new IllegalStateException("Cannot create RestClient for Channel: " + channelName + ", type: " + configType, e);
         }
     }
 
     private MidoClientProperties.EndpointConfig getEndpointConfig(MidoClientProperties.ChannelConfig channelConfig, EndpointType endpointType) {
-        if (endpointType == null || endpointType == EndpointType.FIRST) {
-            return channelConfig.getFirst();
-        } else if (endpointType == EndpointType.SECOND) {
-            MidoClientProperties.EndpointConfig secondConfig = channelConfig.getSecond();
-            return secondConfig != null ? secondConfig : channelConfig.getFirst();
+        if (endpointType == null || endpointType == EndpointType.PRIMARY) {
+            return channelConfig.getPrimary();
+        } else if (endpointType == EndpointType.SECONDARY) {
+            MidoClientProperties.EndpointConfig secondaryConfig = channelConfig.getSecondary();
+            return secondaryConfig != null ? secondaryConfig : channelConfig.getPrimary();
         }
         throw new IllegalArgumentException("Unsupported EndpointType: " + endpointType);
     }

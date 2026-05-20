@@ -24,7 +24,7 @@ mido-client:
     # 인증 서비스 (단일 엔드포인트)
     auth:
       title: "인증 서버"
-      first:
+      primary:
         url: https://auth.example.com
         authorization:
           type: bearer
@@ -36,7 +36,7 @@ mido-client:
     # 결제 서비스 (다중 엔드포인트)
     payment:
       title: "결제 서비스"
-      first:
+      primary:
         title: "결제 조회"
         url: https://api.payment.com
         read-timeout-seconds: 30
@@ -44,7 +44,7 @@ mido-client:
         authorization:
           type: bearer
           token: ${PAYMENT_QUERY_TOKEN}
-      second:
+      secondary:
         title: "결제 처리"
         url: https://process.payment.com
         read-timeout-seconds: 120
@@ -56,7 +56,7 @@ mido-client:
     # 알림 서비스 (웹훅)
     notification:
       title: "알림 서비스"
-      first:
+      primary:
         url: https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
         read-timeout-seconds: 10
         log: off  # 민감한 웹훅 호출은 로깅 비활성화
@@ -140,7 +140,7 @@ public class PaymentService extends BaseExternalApi {
         return "payment";
     }
 
-    // first 엔드포인트 사용 (조회용)
+    // primary 엔드포인트 사용 (조회용)
     public PaymentStatus getPaymentStatus(String paymentId) {
         return withDefaultChannelAction("getPaymentStatus", () -> {
             RestClient client = midoClientFactory.getOrCreateClient("payment");
@@ -152,10 +152,10 @@ public class PaymentService extends BaseExternalApi {
         });
     }
 
-    // second 엔드포인트 사용 (처리용)
+    // secondary 엔드포인트 사용 (처리용)
     public PaymentResult processPayment(PaymentRequest request) {
         return withDefaultChannelAction("processPayment", () -> {
-            RestClient client = midoClientFactory.getOrCreateClient("payment", EndpointType.SECOND);
+            RestClient client = midoClientFactory.getOrCreateClient("payment", EndpointType.SECONDARY);
 
             return client.post()
                     .uri("/payments/process")
@@ -182,7 +182,7 @@ public class OrderService {
         // 1. 주문 생성 (로컬 DB)
         Order order = createOrder(request);
 
-        // 2. 결제 처리 (외부 API - second endpoint)
+        // 2. 결제 처리 (외부 API - secondary endpoint)
         PaymentResult paymentResult = paymentService.processPayment(
             PaymentRequest.builder()
                 .orderId(order.getId())
@@ -213,7 +213,7 @@ public class OrderService {
 mido-client:
   channels:
     secure-api:
-      first:
+      primary:
         url: https://secure-api.example.com
         authorization:
           type: bearer
@@ -227,7 +227,7 @@ mido-client:
   channels:
     legacy-api:
       charset: EUC-KR  # 레거시 시스템용 인코딩
-      first:
+      primary:
         url: https://legacy.example.com
         authorization:
           type: basic
@@ -243,7 +243,7 @@ mido-client:
 mido-client:
   channels:
     third-party:
-      first:
+      primary:
         url: https://api.thirdparty.com
         authorization:
           type: api_key
@@ -293,7 +293,7 @@ public class CustomSecurityInterceptor implements ClientHttpRequestInterceptor {
 mido-client:
   channels:
     protected-api:
-      first:
+      primary:
         url: https://protected-api.example.com
         interceptors:
           - com.example.CustomSecurityInterceptor
@@ -309,25 +309,25 @@ mido-client:
   channels:
     # 개발 환경 - 상세 로깅
     dev-api:
-      first:
+      primary:
         url: https://dev-api.example.com
         log: all  # 콘솔과 파일 모두
 
     # 운영 환경 - 파일만 로깅
     prod-api:
-      first:
+      primary:
         url: https://prod-api.example.com
         log: file  # 파일만
 
     # 민감한 API - 로깅 비활성화
     sensitive-api:
-      first:
+      primary:
         url: https://sensitive-api.example.com
         log: off  # 로깅 안함
 
     # 일반 API - 콘솔만
     public-api:
-      first:
+      primary:
         url: https://public-api.example.com
         log: console  # 콘솔만 (기본값)
 ```
@@ -424,7 +424,7 @@ public class RobustPaymentService extends BaseExternalApi {
     }
 
     private PaymentResult callPaymentApi(PaymentRequest request) {
-        RestClient client = midoClientFactory.getOrCreateClient("payment", EndpointType.SECOND);
+        RestClient client = midoClientFactory.getOrCreateClient("payment", EndpointType.SECONDARY);
 
         return client.post()
                 .uri("/payments/process")
@@ -443,7 +443,7 @@ public class RobustPaymentService extends BaseExternalApi {
 mido-client:
   channels:
     high-volume-api:
-      first:
+      primary:
         url: https://high-volume-api.example.com
         connect-timeout-seconds: 2    # 빠른 연결 설정
         read-timeout-seconds: 30      # 적절한 읽기 타임아웃

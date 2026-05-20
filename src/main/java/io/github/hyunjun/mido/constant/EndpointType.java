@@ -6,8 +6,8 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum EndpointType {
-    FIRST("first"),
-    SECOND("second");
+    PRIMARY("primary"),
+    SECONDARY("secondary");
 
     private final String value;
 }

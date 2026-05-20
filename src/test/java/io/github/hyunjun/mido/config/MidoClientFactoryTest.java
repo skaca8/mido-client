@@ -34,37 +34,37 @@ class MidoClientFactoryTest {
         channelConfig.setTitle("Test Channel");
         channelConfig.setCharset("UTF-8");
 
-        // First endpoint
-        MidoClientProperties.EndpointConfig firstEndpoint = new MidoClientProperties.EndpointConfig();
-        firstEndpoint.setTitle("First Endpoint");
-        firstEndpoint.setUrl("https://api.test.com");
-        firstEndpoint.setReadTimeoutSeconds(30L);
-        firstEndpoint.setConnectTimeoutSeconds(5L);
-        firstEndpoint.setLog(LogLevel.CONSOLE);
+        // Primary endpoint
+        MidoClientProperties.EndpointConfig primaryEndpoint = new MidoClientProperties.EndpointConfig();
+        primaryEndpoint.setTitle("Primary Endpoint");
+        primaryEndpoint.setUrl("https://api.test.com");
+        primaryEndpoint.setReadTimeoutSeconds(30L);
+        primaryEndpoint.setConnectTimeoutSeconds(5L);
+        primaryEndpoint.setLog(LogLevel.CONSOLE);
 
         // Authorization
         MidoClientProperties.Authorization auth = new MidoClientProperties.Authorization();
         auth.setType(TokenType.BEARER);
         auth.setToken("test-token");
-        firstEndpoint.setAuthorization(auth);
+        primaryEndpoint.setAuthorization(auth);
 
         // Headers
         MidoClientProperties.Header header = new MidoClientProperties.Header();
         header.setName("X-Test-Header");
         header.setValue("test-value");
-        firstEndpoint.setHeaders(List.of(header));
+        primaryEndpoint.setHeaders(List.of(header));
 
-        channelConfig.setFirst(firstEndpoint);
+        channelConfig.setPrimary(primaryEndpoint);
 
-        // Second endpoint
-        MidoClientProperties.EndpointConfig secondEndpoint = new MidoClientProperties.EndpointConfig();
-        secondEndpoint.setTitle("Second Endpoint");
-        secondEndpoint.setUrl("https://api2.test.com");
-        secondEndpoint.setReadTimeoutSeconds(60L);
-        secondEndpoint.setConnectTimeoutSeconds(3L);
-        secondEndpoint.setLog(LogLevel.ALL);
+        // Secondary endpoint
+        MidoClientProperties.EndpointConfig secondaryEndpoint = new MidoClientProperties.EndpointConfig();
+        secondaryEndpoint.setTitle("Secondary Endpoint");
+        secondaryEndpoint.setUrl("https://api2.test.com");
+        secondaryEndpoint.setReadTimeoutSeconds(60L);
+        secondaryEndpoint.setConnectTimeoutSeconds(3L);
+        secondaryEndpoint.setLog(LogLevel.ALL);
 
-        channelConfig.setSecond(secondEndpoint);
+        channelConfig.setSecondary(secondaryEndpoint);
 
         properties.getChannels().put("test", channelConfig);
 
@@ -72,7 +72,7 @@ class MidoClientFactoryTest {
     }
 
     @Test
-    void shouldCreateFirstEndpointClient() {
+    void shouldCreatePrimaryEndpointClient() {
         // When
         RestClient client = factory.getOrCreateClient("test");
 
@@ -81,9 +81,9 @@ class MidoClientFactoryTest {
     }
 
     @Test
-    void shouldCreateSecondEndpointClient() {
+    void shouldCreateSecondaryEndpointClient() {
         // When
-        RestClient client = factory.getOrCreateClient("test", EndpointType.SECOND);
+        RestClient client = factory.getOrCreateClient("test", EndpointType.SECONDARY);
 
         // Then
         assertThat(client).isNotNull();
@@ -102,11 +102,11 @@ class MidoClientFactoryTest {
     @Test
     void shouldCreateDifferentClientsForDifferentEndpoints() {
         // When
-        RestClient firstClient = factory.getOrCreateClient("test");
-        RestClient secondClient = factory.getOrCreateClient("test", EndpointType.SECOND);
+        RestClient primaryClient = factory.getOrCreateClient("test");
+        RestClient secondaryClient = factory.getOrCreateClient("test", EndpointType.SECONDARY);
 
         // Then
-        assertThat(firstClient).isNotSameAs(secondClient);
+        assertThat(primaryClient).isNotSameAs(secondaryClient);
     }
 
     @Test
@@ -118,12 +118,12 @@ class MidoClientFactoryTest {
     }
 
     @Test
-    void shouldCreateFirstEndpointClientWithExplicitEndpointType() {
+    void shouldCreatePrimaryEndpointClientWithExplicitEndpointType() {
         // When
         RestClient clientImplicit = factory.getOrCreateClient("test");
-        RestClient clientExplicit = factory.getOrCreateClient("test", EndpointType.FIRST);
+        RestClient clientExplicit = factory.getOrCreateClient("test", EndpointType.PRIMARY);
 
-        // Then - same cache key ("test-first"), so same cached instance
+        // Then - same cache key ("test-primary"), so same cached instance
         assertThat(clientExplicit).isNotNull();
         assertThat(clientImplicit).isSameAs(clientExplicit);
     }
@@ -139,7 +139,7 @@ class MidoClientFactoryTest {
         gzip.setResponse(true);
         gzip.setMinSize(512);
         endpoint.setGzip(gzip);
-        channelConfig.setFirst(endpoint);
+        channelConfig.setPrimary(endpoint);
         properties.getChannels().put("gzipChannel", channelConfig);
 
         // When
@@ -155,7 +155,7 @@ class MidoClientFactoryTest {
         MidoClientProperties.ChannelConfig channelConfig = new MidoClientProperties.ChannelConfig();
         MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
         endpoint.setUrl("https://default-gzip.test.com");
-        channelConfig.setFirst(endpoint);
+        channelConfig.setPrimary(endpoint);
         properties.getChannels().put("defaultGzip", channelConfig);
 
         // When
@@ -176,7 +176,7 @@ class MidoClientFactoryTest {
         MidoClientProperties.ChannelConfig channelConfig = new MidoClientProperties.ChannelConfig();
         MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
         endpoint.setUrl("https://default-type.test.com");
-        channelConfig.setFirst(endpoint);
+        channelConfig.setPrimary(endpoint);
         properties.getChannels().put("defaultType", channelConfig);
 
         // When
@@ -194,7 +194,7 @@ class MidoClientFactoryTest {
         channelConfig.setType(ContentType.XML);
         MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
         endpoint.setUrl("https://xml.test.com");
-        channelConfig.setFirst(endpoint);
+        channelConfig.setPrimary(endpoint);
         properties.getChannels().put("xmlChannel", channelConfig);
 
         // When
@@ -265,18 +265,18 @@ class MidoClientFactoryTest {
     }
 
     @Test
-    void shouldHandleChannelWithoutSecondEndpoint() {
+    void shouldHandleChannelWithoutSecondaryEndpoint() {
         // Given
         MidoClientProperties.ChannelConfig channelConfig = new MidoClientProperties.ChannelConfig();
-        MidoClientProperties.EndpointConfig firstEndpoint = new MidoClientProperties.EndpointConfig();
-        firstEndpoint.setUrl("https://single.test.com");
-        channelConfig.setFirst(firstEndpoint);
+        MidoClientProperties.EndpointConfig primaryEndpoint = new MidoClientProperties.EndpointConfig();
+        primaryEndpoint.setUrl("https://single.test.com");
+        channelConfig.setPrimary(primaryEndpoint);
         properties.getChannels().put("single", channelConfig);
 
         // When
-        RestClient client = factory.getOrCreateClient("single", EndpointType.SECOND);
+        RestClient client = factory.getOrCreateClient("single", EndpointType.SECONDARY);
 
-        // Then - Should fallback to first endpoint
+        // Then - Should fallback to primary endpoint
         assertThat(client).isNotNull();
     }
 

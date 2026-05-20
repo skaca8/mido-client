@@ -24,7 +24,7 @@ factory classes, no repeated setup code.
 
 ## Features
 
-- **Multi-channel support** — define unlimited external API channels, each with `first` / `second` dual endpoint
+- **Multi-channel support** — define unlimited external API channels, each with `primary` / `secondary` dual endpoint
 - **Automatic client caching** — one `RestClient` instance per channel/endpoint, thread-safe via `ConcurrentHashMap`
 - **4-level built-in logging** — `off` / `console` / `file` / `all` (console + file simultaneously), includes body, URL,
   response time
@@ -63,7 +63,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:1.0.7'
+    implementation 'com.github.skaca8:mido-client:1.1.0'
 }
 ```
 
@@ -81,18 +81,18 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.0.7</version>
+    <version>1.1.0</version>
 </dependency>
 ```
 
-> To use a specific release, replace `1.0.7` with a tag or a commit hash.
+> To use a specific release, replace `1.1.0` with a tag or a commit hash.
 
 #### via Maven Central (published release)
 
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:1.0.7'
+implementation 'io.github.skaca8:mido-client:1.1.0'
 ```
 
 **Maven**
@@ -102,7 +102,7 @@ implementation 'io.github.skaca8:mido-client:1.0.7'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.0.7</version>
+    <version>1.1.0</version>
 </dependency>
 ```
 
@@ -116,7 +116,7 @@ mido-client:
       title: "Payment Service"
       charset: UTF-8
       type: json    # json (default) | xml
-      first:
+      primary:
         url: https://api.payment.com
         read-timeout-seconds: 30
         connect-timeout-seconds: 5
@@ -124,7 +124,7 @@ mido-client:
           type: bearer
           token: ${PAYMENT_QUERY_TOKEN}
         log: console
-      second: # optional: second endpoint for same service
+      secondary: # optional: secondary endpoint for the same service
         url: https://process.payment.com
         read-timeout-seconds: 60
         authorization:
@@ -132,7 +132,7 @@ mido-client:
           token: ${PAYMENT_PROCESS_TOKEN}
         log: all
     auth:
-      first:
+      primary:
         url: https://auth.example.com
         authorization:
           type: bearer
@@ -154,7 +154,7 @@ public class PaymentService extends BaseExternalApi {
 
     public PaymentService(MidoClientFactory midoClientFactory) {
         this.queryClient = midoClientFactory.getOrCreateClient("payment");
-        this.processClient = midoClientFactory.getOrCreateClient("payment", EndpointType.SECOND);
+        this.processClient = midoClientFactory.getOrCreateClient("payment", EndpointType.SECONDARY);
     }
 
     @Override
@@ -196,7 +196,7 @@ public class PaymentService extends BaseExternalApi {
 | `charset` | String      | `UTF-8` | Default character encoding for response body             |
 | `type`    | ContentType | `json`  | Request `Content-Type` for the channel — `json` / `xml` |
 
-### Endpoint (`first` / `second`)
+### Endpoint (`primary` / `secondary`)
 
 | Property                  | Type           | Default   | Description                                                   |
 |---------------------------|----------------|-----------|---------------------------------------------------------------|
@@ -229,7 +229,7 @@ public class PaymentService extends BaseExternalApi {
 - `gzip.min-size` is negative
 - `gzip.max-decompressed-size` is zero or negative
 - `headers[].name` or `headers[].value` is blank
-- A channel is missing its required `first` endpoint
+- A channel is missing its required `primary` endpoint
 - `type` is explicitly set to `null` (must be `json` or `xml`; unknown values are rejected separately by Spring's enum binder at startup)
 
 ## Advanced Usage
@@ -338,7 +338,7 @@ public class PaymentResilienceInterceptor implements ClientHttpRequestIntercepto
 mido-client:
   channels:
     payment:
-      first:
+      primary:
         url: https://api.payment.com
         interceptors:
           - "com.yourapp.interceptor.PaymentResilienceInterceptor"
@@ -360,11 +360,11 @@ mido-client:
   channels:
     legacySoap:
       type: xml             # outgoing Content-Type: application/xml
-      first:
+      primary:
         url: https://soap.example.com
     modernRest:
       # type omitted → defaults to json
-      first:
+      primary:
         url: https://api.example.com
 ```
 
@@ -381,7 +381,7 @@ Per-channel opt-in HTTP body compression. Each direction is independently toggle
 mido-client:
   channels:
     payment:
-      first:
+      primary:
         url: https://api.payment.com
         gzip:
           request: true                    # compress outgoing body
