@@ -59,7 +59,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:1.1.0'
+    implementation 'com.github.skaca8:mido-client:1.1.1'
 }
 ```
 
@@ -77,18 +77,18 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.1.0</version>
+    <version>1.1.1</version>
 </dependency>
 ```
 
-> 특정 릴리즈를 사용하려면 `1.1.0`을 원하는 태그 또는 커밋 해시로 변경하세요.
+> 특정 릴리즈를 사용하려면 `1.1.1`을 원하는 태그 또는 커밋 해시로 변경하세요.
 
 #### Maven Central을 통한 방법 (정식 릴리즈)
 
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:1.1.0'
+implementation 'io.github.skaca8:mido-client:1.1.1'
 ```
 
 **Maven**
@@ -98,7 +98,7 @@ implementation 'io.github.skaca8:mido-client:1.1.0'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.1.0</version>
+    <version>1.1.1</version>
 </dependency>
 ```
 
