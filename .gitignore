@@ -71,3 +71,11 @@ ehthumbs.db
 Thumbs.db
 
 .claude/
+
+# Agent workspace and relay notes (local only)
+AGENTS.md
+AGENT_HANDOFF.md
+.agents/
+.codex/
+docs/
+/AGENTS.md
