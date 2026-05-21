@@ -112,8 +112,10 @@ public class MidoClientProperties {
     @FieldDefaults(level = AccessLevel.PRIVATE)
     public static class Authorization {
 
+        @NotNull
         TokenType type;
 
+        @NotBlank
         String token;
 
     }

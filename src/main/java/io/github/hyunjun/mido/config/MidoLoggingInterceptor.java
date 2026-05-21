@@ -13,6 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpRequestExecution;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.ClientHttpResponse;
+import org.springframework.util.StringUtils;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -49,9 +50,7 @@ public class MidoLoggingInterceptor implements ClientHttpRequestInterceptor {
         if (LogLevel.OFF == effectiveLogLevel) return;
 
         try {
-            String channelAction = ChannelContext.isBound()
-                    ? ChannelContext.getChannelAction()
-                    : "unknown";
+            String channelAction = getChannelAction();
             String bodyString = body != null && body.length > 0 ? new String(body, StandardCharsets.UTF_8) : "";
 
             String logMessage = "[mido-client request] channelAction: {}, method: {}, url: {}, body: {}";
@@ -79,12 +78,8 @@ public class MidoLoggingInterceptor implements ClientHttpRequestInterceptor {
                     .append(", responseTimeMs: ")
                     .append(responseTimeMs);
 
-            String channelAction = ChannelContext.isBound()
-                    ? ChannelContext.getChannelAction()
-                    : "unknown";
-            if (channelAction != null && !channelAction.trim().isEmpty()) {
-                logMessage.append(", channelAction: ").append(channelAction);
-            }
+            String channelAction = getChannelAction();
+            logMessage.append(", channelAction: ").append(channelAction);
 
             logMessage.append(", body: ").append(readResponseBody(response, defaultCharset));
 
@@ -136,6 +131,11 @@ public class MidoLoggingInterceptor implements ClientHttpRequestInterceptor {
 
     private Logger getLogger(LogLevel logLevel) {
         return logLevel == LogLevel.FILE ? fileLog : log;
+    }
+
+    private String getChannelAction() {
+        String channelAction = ChannelContext.getChannelAction();
+        return StringUtils.hasText(channelAction) ? channelAction : "unknown";
     }
 
     private boolean isValidUtf8(byte[] bytes) {

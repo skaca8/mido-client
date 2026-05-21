@@ -1,11 +1,4 @@
 {
-  "groups": [
-    {
-      "name": "mido-client",
-      "type": "io.github.hyunjun.mido.config.MidoClientProperties",
-      "sourceType": "io.github.hyunjun.mido.config.MidoClientProperties"
-    }
-  ],
   "properties": [
     {
       "name": "mido-client.enabled",
@@ -21,7 +14,7 @@
   ],
   "hints": [
     {
-      "name": "mido-client.channels.*.first.log",
+      "name": "mido-client.channels.*.primary.log",
       "values": [
         {
           "value": "off",
@@ -42,7 +35,7 @@
       ]
     },
     {
-      "name": "mido-client.channels.*.second.log",
+      "name": "mido-client.channels.*.secondary.log",
       "values": [
         {
           "value": "off",
@@ -63,7 +56,7 @@
       ]
     },
     {
-      "name": "mido-client.channels.*.first.authorization.type",
+      "name": "mido-client.channels.*.primary.authorization.type",
       "values": [
         {
           "value": "bearer",
@@ -80,7 +73,7 @@
       ]
     },
     {
-      "name": "mido-client.channels.*.second.authorization.type",
+      "name": "mido-client.channels.*.secondary.authorization.type",
       "values": [
         {
           "value": "bearer",

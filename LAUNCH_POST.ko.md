@@ -3,7 +3,7 @@
 > Spring Boot 3.2+ 환경에서 **여러 외부 API 채널을 YAML만으로 정의·관리**하는 RestClient 래퍼.
 > `@Bean` 대량 생산, OpenFeign 인터페이스 사슬, 사라진 charset, 들쭉날쭉한 로그에 지친 분들 환영.
 >
-> Maven Central: `io.github.skaca8:mido-client:1.1.0`
+> Maven Central: `io.github.skaca8:mido-client:1.1.2`
 > GitHub: https://github.com/skaca8/mido-client
 
 ---
@@ -248,7 +248,7 @@ interceptors:
 
 **Gradle:**
 ```gradle
-implementation 'io.github.skaca8:mido-client:1.1.0'
+implementation 'io.github.skaca8:mido-client:1.1.2'
 ```
 
 **Maven:**
@@ -256,7 +256,7 @@ implementation 'io.github.skaca8:mido-client:1.1.0'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.1.0</version>
+    <version>1.1.2</version>
 </dependency>
 ```
 

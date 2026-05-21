@@ -172,6 +172,33 @@ class MidoClientAutoConfigurationTest {
     }
 
     @Test
+    void shouldFailValidationWhenAuthorizationTypeIsMissing() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.primary.url=https://api.test.com",
+                        "mido-client.channels.test.primary.authorization.token=test-token"
+                )
+                .run(context -> assertThat(context).hasFailed()
+                        .getFailure()
+                        .hasStackTraceContaining("authorization.type"));
+    }
+
+    @Test
+    void shouldFailValidationWhenAuthorizationTokenIsBlank() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.primary.url=https://api.test.com",
+                        "mido-client.channels.test.primary.authorization.type=bearer",
+                        "mido-client.channels.test.primary.authorization.token="
+                )
+                .run(context -> assertThat(context).hasFailed()
+                        .getFailure()
+                        .hasStackTraceContaining("authorization.token"));
+    }
+
+    @Test
     void shouldFailValidationWhenChannelPrimaryIsMissing() {
         contextRunner
                 .withPropertyValues(
