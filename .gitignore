@@ -75,7 +75,6 @@ Thumbs.db
 # Agent workspace and relay notes (local only)
 AGENTS.md
 AGENT_HANDOFF.md
-.agents/
+docs/agent-handoff-history.md
 .codex/
-docs/
-/AGENTS.md
+.agents/
