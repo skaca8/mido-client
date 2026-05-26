@@ -51,7 +51,7 @@ public class MidoLoggingInterceptor implements ClientHttpRequestInterceptor {
 
         try {
             String channelAction = getChannelAction();
-            String bodyString = body != null && body.length > 0 ? new String(body, StandardCharsets.UTF_8) : "";
+            String bodyString = body != null && body.length > 0 ? new String(body, resolveRequestCharset(request)) : "";
 
             String logMessage = "[mido-client request] channelAction: {}, method: {}, url: {}, body: {}";
 
@@ -112,6 +112,12 @@ public class MidoLoggingInterceptor implements ClientHttpRequestInterceptor {
         return Optional.ofNullable(headers.getContentType())
                 .map(MediaType::getCharset)
                 .orElse(null);
+    }
+
+    private Charset resolveRequestCharset(HttpRequest request) {
+        // Content-Type 헤더의 charset이 가장 정확. 없으면 채널에 선언된 기본 charset.
+        Charset headerCharset = getCharsetFromContentType(request.getHeaders());
+        return headerCharset != null ? headerCharset : charset;
     }
 
     private Charset smartDetectCharset(HttpHeaders headers, byte[] bytes, Charset defaultCharset) {

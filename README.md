@@ -257,7 +257,22 @@ interceptors:
   - "com.example.RequestIdInterceptor"
 ```
 
-> Custom interceptors are instantiated via the no-arg public constructor (`Class.forName(...).getDeclaredConstructor().newInstance()`), so they cannot receive Spring beans through constructor injection. Use `static` fields, `@Autowired` field injection (works because Spring still post-processes the bean if you also declare it as `@Component`), or an `ApplicationContextHolder` pattern.
+> Custom interceptors are instantiated via the no-arg public constructor
+> (`Class.forName(...).getDeclaredConstructor().newInstance()`). The resulting instance is **not** a Spring-managed bean,
+> so neither constructor injection nor `@Autowired` field injection works — even if the class is also annotated
+> `@Component`, the bean Spring manages is a *separate* instance that `mido-client` never sees.
+>
+> Two patterns are practical today:
+>
+> 1. **`static` fields** — best for stateless interceptors (preferred).
+> 2. **`ApplicationContextHolder` escape hatch** — store the `ApplicationContext` in a `static` field at startup and
+>    look up beans inside `intercept(...)`. Treat as an escape hatch, not recommended design.
+>
+> A first-class "register interceptor by Spring bean name" option is on the roadmap for the next minor release.
+>
+> **Fail-fast behavior**: if the class cannot be loaded, has no public no-arg constructor, or does not implement
+> `ClientHttpRequestInterceptor`, the first call to `MidoClientFactory.getOrCreateClient(...)` throws
+> `IllegalStateException` naming the channel and the offending class.
 
 ### Resilience (Rate Limiter / Circuit Breaker / Retry)
 

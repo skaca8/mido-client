@@ -121,19 +121,25 @@ public class MidoClientFactory {
 
     private void addCustomInterceptors(List<ClientHttpRequestInterceptor> interceptorList, List<String> classNames) {
         for (String className : classNames) {
-            createInterceptor(className).ifPresent(interceptorList::add);
+            interceptorList.add(createInterceptor(className));
         }
     }
 
-    private Optional<ClientHttpRequestInterceptor> createInterceptor(String className) {
+    private ClientHttpRequestInterceptor createInterceptor(String className) {
+        // 설정 실패는 운영 환경에서 silent skip 대신 fail-fast — 외부 catch에서 채널 이름이 함께 보고된다.
         try {
             Class<?> interceptorClass = Class.forName(className);
-            ClientHttpRequestInterceptor interceptor = (ClientHttpRequestInterceptor) interceptorClass.getDeclaredConstructor().newInstance();
+            Object instance = interceptorClass.getDeclaredConstructor().newInstance();
+            if (!(instance instanceof ClientHttpRequestInterceptor interceptor)) {
+                throw new IllegalStateException(
+                        "Interceptor class does not implement ClientHttpRequestInterceptor: " + className);
+            }
             log.debug("Successfully registered interceptor: {}", className);
-            return Optional.of(interceptor);
-        } catch (Exception e) {
-            log.warn("Failed to instantiate interceptor: {}, error: {}", className, e.getMessage());
-            return Optional.empty();
+            return interceptor;
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to instantiate interceptor: " + className, e);
         }
     }
 

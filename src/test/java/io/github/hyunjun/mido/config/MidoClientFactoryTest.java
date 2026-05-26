@@ -280,4 +280,82 @@ class MidoClientFactoryTest {
         assertThat(client).isNotNull();
     }
 
+    @Test
+    void shouldFailFastWhenInterceptorClassNotFound() {
+        // Given
+        MidoClientProperties.ChannelConfig channelConfig = new MidoClientProperties.ChannelConfig();
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+        endpoint.setUrl("https://bad-interceptor.test.com");
+        endpoint.setInterceptors(List.of("com.example.NonExistentInterceptor"));
+        channelConfig.setPrimary(endpoint);
+        properties.getChannels().put("badInterceptor", channelConfig);
+
+        // When & Then - 채널 이름과 인터셉터 클래스명 모두 메시지에 포함되어야 함
+        assertThatThrownBy(() -> factory.getOrCreateClient("badInterceptor"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("badInterceptor")
+                .hasRootCauseInstanceOf(ClassNotFoundException.class);
+    }
+
+    @Test
+    void shouldFailFastWhenInterceptorDoesNotImplementInterface() {
+        // Given
+        MidoClientProperties.ChannelConfig channelConfig = new MidoClientProperties.ChannelConfig();
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+        endpoint.setUrl("https://wrong-type-interceptor.test.com");
+        endpoint.setInterceptors(List.of(NotAnInterceptor.class.getName()));
+        channelConfig.setPrimary(endpoint);
+        properties.getChannels().put("wrongTypeInterceptor", channelConfig);
+
+        // When & Then
+        assertThatThrownBy(() -> factory.getOrCreateClient("wrongTypeInterceptor"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("wrongTypeInterceptor")
+                .hasStackTraceContaining("does not implement ClientHttpRequestInterceptor")
+                .hasStackTraceContaining(NotAnInterceptor.class.getName());
+    }
+
+    @Test
+    void shouldFailFastWhenInterceptorHasNoNoArgConstructor() {
+        // Given
+        MidoClientProperties.ChannelConfig channelConfig = new MidoClientProperties.ChannelConfig();
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+        endpoint.setUrl("https://no-default-ctor-interceptor.test.com");
+        endpoint.setInterceptors(List.of(InterceptorWithoutNoArgCtor.class.getName()));
+        channelConfig.setPrimary(endpoint);
+        properties.getChannels().put("noDefaultCtor", channelConfig);
+
+        // When & Then
+        assertThatThrownBy(() -> factory.getOrCreateClient("noDefaultCtor"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("noDefaultCtor")
+                .hasStackTraceContaining("Failed to instantiate interceptor")
+                .hasStackTraceContaining(InterceptorWithoutNoArgCtor.class.getName());
+    }
+
+    public static class NotAnInterceptor {
+        public NotAnInterceptor() {
+            // intentionally not implementing ClientHttpRequestInterceptor
+        }
+    }
+
+    public static class InterceptorWithoutNoArgCtor
+            implements org.springframework.http.client.ClientHttpRequestInterceptor {
+
+        @SuppressWarnings("unused")
+        private final String required;
+
+        public InterceptorWithoutNoArgCtor(String required) {
+            this.required = required;
+        }
+
+        @Override
+        public org.springframework.http.client.ClientHttpResponse intercept(
+                org.springframework.http.HttpRequest request,
+                byte[] body,
+                org.springframework.http.client.ClientHttpRequestExecution execution) {
+            throw new UnsupportedOperationException("test fixture only");
+        }
+    }
+
 }

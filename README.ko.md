@@ -252,7 +252,16 @@ interceptors:
   - "com.example.RequestIdInterceptor"
 ```
 
-> 커스텀 인터셉터는 no-arg public 생성자(`Class.forName(...).getDeclaredConstructor().newInstance()`)로 인스턴스화되므로, 생성자 주입으로 Spring 빈을 받을 수 없습니다. `static` 필드, `@Autowired` 필드 주입(인터셉터를 `@Component`로도 선언하면 Spring이 post-process 해줌), 또는 `ApplicationContextHolder` 패턴 등을 사용하세요.
+> 커스텀 인터셉터는 no-arg public 생성자(`Class.forName(...).getDeclaredConstructor().newInstance()`)로 인스턴스화됩니다. 이렇게 만들어진 객체는 **Spring이 관리하는 빈이 아니므로**, 생성자 주입은 물론 `@Autowired` 필드 주입도 동작하지 않습니다. 인터셉터에 `@Component`를 함께 붙이더라도 Spring이 만드는 빈은 *별개 인스턴스*이며, `mido-client`는 그 빈을 사용하지 않습니다.
+>
+> 현실적으로 가능한 두 가지 패턴:
+>
+> 1. **`static` 필드** — 상태 없는 인터셉터에 가장 깔끔합니다 (권장).
+> 2. **`ApplicationContextHolder` 우회** — 시작 시점에 `ApplicationContext`를 정적 필드에 보관해 두고 `intercept(...)` 내부에서 빈을 조회하는 방식. *권장 디자인이 아니며 escape hatch로만 사용*하세요.
+>
+> "Spring 빈 이름으로 인터셉터 등록" 옵션은 다음 마이너 릴리스의 로드맵에 있습니다.
+>
+> **Fail-fast 동작**: 클래스 로딩 실패, public no-arg 생성자 부재, `ClientHttpRequestInterceptor` 미구현 등은 `MidoClientFactory.getOrCreateClient(...)`의 첫 호출 시점에 채널 이름과 문제 클래스명을 포함한 `IllegalStateException`이 발생합니다.
 
 ### 회복성 (Rate Limiter / Circuit Breaker / Retry)
 
