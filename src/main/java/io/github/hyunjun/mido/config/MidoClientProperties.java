@@ -19,6 +19,7 @@ import org.springframework.validation.annotation.Validated;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Getter
@@ -134,11 +135,28 @@ public class MidoClientProperties {
 
     }
 
-    public ChannelConfig getChannelConfig(String channelName) {
-        if (channels.containsKey(channelName)) {
-            return channels.get(channelName);
+    public void setChannels(Map<String, ChannelConfig> channels) {
+        // YAML 키의 대소문자에 상관없이 일관되게 조회되도록 바인딩 시점에 소문자로 정규화한다.
+        if (channels == null) {
+            this.channels = new HashMap<>();
+            return;
         }
-        throw new IllegalArgumentException("Unknown Channel: " + channelName);
+        Map<String, ChannelConfig> normalized = new HashMap<>();
+        channels.forEach((key, value) -> normalized.put(normalizeChannelName(key), value));
+        this.channels = normalized;
+    }
+
+    public ChannelConfig getChannelConfig(String channelName) {
+        String normalizedName = normalizeChannelName(channelName);
+        ChannelConfig config = channels.get(normalizedName);
+        if (config == null) {
+            throw new IllegalArgumentException("Unknown Channel: " + channelName);
+        }
+        return config;
+    }
+
+    private static String normalizeChannelName(String channelName) {
+        return channelName == null ? null : channelName.toLowerCase(Locale.ROOT);
     }
 
 }

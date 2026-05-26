@@ -140,10 +140,10 @@ class MidoClientFactoryTest {
         gzip.setMinSize(512);
         endpoint.setGzip(gzip);
         channelConfig.setPrimary(endpoint);
-        properties.getChannels().put("gzipChannel", channelConfig);
+        properties.getChannels().put("gzipchannel", channelConfig);
 
         // When
-        RestClient client = factory.getOrCreateClient("gzipChannel");
+        RestClient client = factory.getOrCreateClient("gzipchannel");
 
         // Then
         assertThat(client).isNotNull();
@@ -156,10 +156,10 @@ class MidoClientFactoryTest {
         MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
         endpoint.setUrl("https://default-gzip.test.com");
         channelConfig.setPrimary(endpoint);
-        properties.getChannels().put("defaultGzip", channelConfig);
+        properties.getChannels().put("defaultgzip", channelConfig);
 
         // When
-        RestClient client = factory.getOrCreateClient("defaultGzip");
+        RestClient client = factory.getOrCreateClient("defaultgzip");
 
         // Then
         assertThat(client).isNotNull();
@@ -177,10 +177,10 @@ class MidoClientFactoryTest {
         MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
         endpoint.setUrl("https://default-type.test.com");
         channelConfig.setPrimary(endpoint);
-        properties.getChannels().put("defaultType", channelConfig);
+        properties.getChannels().put("defaulttype", channelConfig);
 
         // When
-        RestClient client = factory.getOrCreateClient("defaultType");
+        RestClient client = factory.getOrCreateClient("defaulttype");
 
         // Then
         assertThat(client).isNotNull();
@@ -195,29 +195,14 @@ class MidoClientFactoryTest {
         MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
         endpoint.setUrl("https://xml.test.com");
         channelConfig.setPrimary(endpoint);
-        properties.getChannels().put("xmlChannel", channelConfig);
+        properties.getChannels().put("xmlchannel", channelConfig);
 
         // When
-        RestClient client = factory.getOrCreateClient("xmlChannel");
+        RestClient client = factory.getOrCreateClient("xmlchannel");
 
         // Then
         assertThat(client).isNotNull();
         assertThat(channelConfig.getType()).isEqualTo(ContentType.XML);
-    }
-
-    @Test
-    void shouldBuildClientViaThreeArgBaseRestClientOverload() {
-        // Given - back-compat 3-arg overload contract
-        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
-        endpoint.setUrl("https://overload.test.com");
-        endpoint.setLog(LogLevel.OFF);
-
-        // When
-        RestClient.Builder builder = factory.baseRestClient(endpoint.getUrl(), endpoint, StandardCharsets.UTF_8);
-
-        // Then
-        assertThat(builder).isNotNull();
-        assertThat(builder.build()).isNotNull();
     }
 
     @Test
@@ -227,7 +212,7 @@ class MidoClientFactoryTest {
         endpoint.setUrl("https://json-hdr.test.com");
         endpoint.setLog(LogLevel.OFF);
 
-        RestClient.Builder builder = factory.baseRestClient(endpoint.getUrl(), endpoint, StandardCharsets.UTF_8);
+        RestClient.Builder builder = factory.baseRestClient(endpoint.getUrl(), endpoint, StandardCharsets.UTF_8, ContentType.JSON);
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         RestClient client = builder.build();
 
@@ -281,6 +266,32 @@ class MidoClientFactoryTest {
     }
 
     @Test
+    void shouldReturnSameCachedClientRegardlessOfChannelNameCase() {
+        // Given - YAML 키는 "test" (소문자, setUp 참조)
+
+        // When - 다양한 대소문자로 호출
+        RestClient lower = factory.getOrCreateClient("test");
+        RestClient upper = factory.getOrCreateClient("TEST");
+        RestClient mixed = factory.getOrCreateClient("Test");
+
+        // Then - 모두 동일한 캐시 인스턴스
+        assertThat(lower).isSameAs(upper);
+        assertThat(upper).isSameAs(mixed);
+    }
+
+    @Test
+    void shouldReturnSameCachedClientRegardlessOfCaseForSecondaryEndpoint() {
+        // Given - "test" 채널에 secondary 정의됨 (setUp 참조)
+
+        // When
+        RestClient upper = factory.getOrCreateClient("TEST", EndpointType.SECONDARY);
+        RestClient lower = factory.getOrCreateClient("test", EndpointType.SECONDARY);
+
+        // Then
+        assertThat(upper).isSameAs(lower);
+    }
+
+    @Test
     void shouldFailFastWhenInterceptorClassNotFound() {
         // Given
         MidoClientProperties.ChannelConfig channelConfig = new MidoClientProperties.ChannelConfig();
@@ -288,12 +299,12 @@ class MidoClientFactoryTest {
         endpoint.setUrl("https://bad-interceptor.test.com");
         endpoint.setInterceptors(List.of("com.example.NonExistentInterceptor"));
         channelConfig.setPrimary(endpoint);
-        properties.getChannels().put("badInterceptor", channelConfig);
+        properties.getChannels().put("badinterceptor", channelConfig);
 
         // When & Then - 채널 이름과 인터셉터 클래스명 모두 메시지에 포함되어야 함
-        assertThatThrownBy(() -> factory.getOrCreateClient("badInterceptor"))
+        assertThatThrownBy(() -> factory.getOrCreateClient("badinterceptor"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("badInterceptor")
+                .hasMessageContaining("badinterceptor")
                 .hasRootCauseInstanceOf(ClassNotFoundException.class);
     }
 
@@ -305,12 +316,12 @@ class MidoClientFactoryTest {
         endpoint.setUrl("https://wrong-type-interceptor.test.com");
         endpoint.setInterceptors(List.of(NotAnInterceptor.class.getName()));
         channelConfig.setPrimary(endpoint);
-        properties.getChannels().put("wrongTypeInterceptor", channelConfig);
+        properties.getChannels().put("wrongtypeinterceptor", channelConfig);
 
         // When & Then
-        assertThatThrownBy(() -> factory.getOrCreateClient("wrongTypeInterceptor"))
+        assertThatThrownBy(() -> factory.getOrCreateClient("wrongtypeinterceptor"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("wrongTypeInterceptor")
+                .hasMessageContaining("wrongtypeinterceptor")
                 .hasStackTraceContaining("does not implement ClientHttpRequestInterceptor")
                 .hasStackTraceContaining(NotAnInterceptor.class.getName());
     }
@@ -323,12 +334,12 @@ class MidoClientFactoryTest {
         endpoint.setUrl("https://no-default-ctor-interceptor.test.com");
         endpoint.setInterceptors(List.of(InterceptorWithoutNoArgCtor.class.getName()));
         channelConfig.setPrimary(endpoint);
-        properties.getChannels().put("noDefaultCtor", channelConfig);
+        properties.getChannels().put("nodefaultctor", channelConfig);
 
         // When & Then
-        assertThatThrownBy(() -> factory.getOrCreateClient("noDefaultCtor"))
+        assertThatThrownBy(() -> factory.getOrCreateClient("nodefaultctor"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("noDefaultCtor")
+                .hasMessageContaining("nodefaultctor")
                 .hasStackTraceContaining("Failed to instantiate interceptor")
                 .hasStackTraceContaining(InterceptorWithoutNoArgCtor.class.getName());
     }

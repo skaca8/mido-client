@@ -273,6 +273,27 @@ class MidoClientAutoConfigurationTest {
     }
 
     @Test
+    void shouldNormalizeYamlChannelKeyToLowerCase() {
+        // Given - YAML 키를 의도적으로 PascalCase로
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.Payment.primary.url=https://api.payment.com"
+                )
+                .run(context -> {
+                    MidoClientProperties properties = context.getBean(MidoClientProperties.class);
+
+                    // setChannels에서 소문자 정규화 → Map에는 "payment" 키로 저장
+                    assertThat(properties.getChannels()).containsKey("payment");
+
+                    // 어떤 대소문자로 조회해도 동일하게 매칭
+                    assertThat(properties.getChannelConfig("payment")).isNotNull();
+                    assertThat(properties.getChannelConfig("Payment")).isNotNull();
+                    assertThat(properties.getChannelConfig("PAYMENT")).isNotNull();
+                });
+    }
+
+    @Test
     void shouldApplyGzipDefaultsWhenNotConfigured() {
         contextRunner
                 .withPropertyValues(

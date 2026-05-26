@@ -28,11 +28,6 @@ public class MidoClientFactory {
 
     private final Map<String, RestClient> clientCache = new ConcurrentHashMap<>();
 
-    public RestClient.Builder baseRestClient(String baseUrl, MidoClientProperties.EndpointConfig endpointConfig, Charset charset) {
-        // 외부 호환성을 위한 오버로드 — Content-Type 미지정 시 JSON
-        return baseRestClient(baseUrl, endpointConfig, charset, ContentType.JSON);
-    }
-
     public RestClient.Builder baseRestClient(String baseUrl, MidoClientProperties.EndpointConfig endpointConfig, Charset charset, ContentType contentType) {
         BufferingClientHttpRequestFactory requestFactory = createRequestFactory(
                 endpointConfig.getConnectTimeoutSeconds(),
@@ -48,12 +43,12 @@ public class MidoClientFactory {
     }
 
     public RestClient getOrCreateClient(String channelName) {
-        String cacheKey = channelName.toLowerCase() + "-primary";
+        String cacheKey = channelName.toLowerCase(Locale.ROOT) + "-primary";
         return clientCache.computeIfAbsent(cacheKey, k -> createClient(channelName, null));
     }
 
     public RestClient getOrCreateClient(String channelName, EndpointType endpointType) {
-        String cacheKey = channelName.toLowerCase() + "-" + endpointType.getValue();
+        String cacheKey = channelName.toLowerCase(Locale.ROOT) + "-" + endpointType.getValue();
         return clientCache.computeIfAbsent(cacheKey, k -> createClient(channelName, endpointType));
     }
 
