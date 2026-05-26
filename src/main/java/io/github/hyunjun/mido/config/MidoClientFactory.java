@@ -20,6 +20,30 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Builds and caches {@link RestClient} instances per channel + endpoint configured under
+ * {@code mido-client.channels.*}.
+ *
+ * <p>Each unique {@code (channelName, endpointType)} pair maps to one {@link RestClient}; subsequent
+ * lookups return the same cached instance. Channel names are matched case-insensitively (normalized
+ * to lowercase via {@link Locale#ROOT}). The cache is backed by a {@link ConcurrentHashMap}, so
+ * {@link #getOrCreateClient(String) getOrCreateClient} is safe to call from multiple threads — the
+ * underlying {@link RestClient} is itself thread-safe.
+ *
+ * <p>Each built client is wired with:
+ * <ul>
+ *   <li>read/connect timeouts and base URL from {@link MidoClientProperties.EndpointConfig}</li>
+ *   <li>{@code Authorization} and static headers</li>
+ *   <li>a logging interceptor (level controlled by {@code log:} in YAML)</li>
+ *   <li>optional gzip request/response interceptors</li>
+ *   <li>any user-supplied custom interceptors named in {@code interceptors:}</li>
+ * </ul>
+ *
+ * <p>Interceptor instantiation failure is fail-fast: a class that cannot be loaded, lacks a public
+ * no-arg constructor, or does not implement {@link ClientHttpRequestInterceptor} causes the first
+ * {@code getOrCreateClient} call for that channel to throw {@link IllegalStateException} naming
+ * both the channel and the offending class.
+ */
 @Slf4j
 @RequiredArgsConstructor
 public class MidoClientFactory {
@@ -28,6 +52,19 @@ public class MidoClientFactory {
 
     private final Map<String, RestClient> clientCache = new ConcurrentHashMap<>();
 
+    /**
+     * Lower-level builder used internally and exposed for advanced cases where the caller already
+     * has an {@link MidoClientProperties.EndpointConfig} in hand (e.g. building a one-off client
+     * outside of a configured channel). Most callers should prefer {@link #getOrCreateClient(String)}.
+     *
+     * @param baseUrl        base URL the resulting {@code RestClient} will resolve relative URIs against
+     * @param endpointConfig timeout / auth / headers / interceptors / gzip configuration
+     * @param charset        default charset used by the {@code StringHttpMessageConverter} and as a
+     *                       fallback for logging
+     * @param contentType    outgoing {@code Content-Type} (JSON or XML)
+     * @return a pre-configured {@link RestClient.Builder}; callers may further customize and then
+     *         {@code .build()}
+     */
     public RestClient.Builder baseRestClient(String baseUrl, MidoClientProperties.EndpointConfig endpointConfig, Charset charset, ContentType contentType) {
         BufferingClientHttpRequestFactory requestFactory = createRequestFactory(
                 endpointConfig.getConnectTimeoutSeconds(),
@@ -42,11 +79,32 @@ public class MidoClientFactory {
                 .requestInterceptors(interceptors -> interceptors.addAll(createInterceptors(endpointConfig.getInterceptors(), endpointConfig.getLog(), charset, endpointConfig.getGzip())));
     }
 
+    /**
+     * Returns the cached {@link RestClient} for the channel's {@code primary} endpoint, creating it
+     * on first access. Channel name lookup is case-insensitive.
+     *
+     * @param channelName YAML channel key (any casing)
+     * @return the channel's primary {@link RestClient}
+     * @throws IllegalStateException if the channel is not configured, the URL is missing, or a
+     *                               custom interceptor cannot be instantiated. The exception message
+     *                               names the channel; the cause carries the original failure.
+     */
     public RestClient getOrCreateClient(String channelName) {
         String cacheKey = channelName.toLowerCase(Locale.ROOT) + "-primary";
         return clientCache.computeIfAbsent(cacheKey, k -> createClient(channelName, null));
     }
 
+    /**
+     * Returns the cached {@link RestClient} for the requested endpoint type, creating it on first
+     * access. If {@link EndpointType#SECONDARY} is requested but the channel has no secondary
+     * configuration, the primary endpoint is used as a fallback.
+     *
+     * @param channelName  YAML channel key (any casing)
+     * @param endpointType {@link EndpointType#PRIMARY} or {@link EndpointType#SECONDARY}
+     * @return the requested {@link RestClient}
+     * @throws IllegalStateException if the channel is not configured, the URL is missing, or a
+     *                               custom interceptor cannot be instantiated
+     */
     public RestClient getOrCreateClient(String channelName, EndpointType endpointType) {
         String cacheKey = channelName.toLowerCase(Locale.ROOT) + "-" + endpointType.getValue();
         return clientCache.computeIfAbsent(cacheKey, k -> createClient(channelName, endpointType));

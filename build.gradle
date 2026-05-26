@@ -55,6 +55,12 @@ java {
     withSourcesJar()
 }
 
+// Lombok이 생성하는 default constructor에는 javadoc을 붙일 수 없어 missing 경고가 노이즈로 남는다.
+// missing 외 doclint 검사(잘못된 @link, bad reference 등)는 유지한다.
+tasks.named('javadoc') {
+    options.addBooleanOption('Xdoclint:all,-missing', true)
+}
+
 // 라이브러리로 배포하기 위한 설정
 jar {
     enabled = true

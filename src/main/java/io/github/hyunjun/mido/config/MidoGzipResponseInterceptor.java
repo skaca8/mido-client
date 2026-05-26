@@ -16,6 +16,12 @@ import java.io.InputStream;
 import java.util.Locale;
 import java.util.zip.GZIPInputStream;
 
+/**
+ * Internal. Adds {@code Accept-Encoding: gzip} and transparently decompresses gzipped responses
+ * when {@code gzip.response: true} is set on the endpoint. Bounded by
+ * {@code gzip.max-decompressed-size} to defend against decompression bombs. Not part of the public
+ * API — visibility may be reduced in a future minor release.
+ */
 @RequiredArgsConstructor
 @SuppressWarnings("ClassCanBeRecord")
 public class MidoGzipResponseInterceptor implements ClientHttpRequestInterceptor {

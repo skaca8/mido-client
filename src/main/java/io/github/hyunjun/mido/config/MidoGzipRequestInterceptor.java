@@ -12,6 +12,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.zip.GZIPOutputStream;
 
+/**
+ * Internal. Compresses outgoing request bodies with gzip when {@code gzip.request: true} is set on
+ * the endpoint and the body meets the minimum size threshold. Not part of the public API —
+ * visibility may be reduced in a future minor release.
+ */
 @RequiredArgsConstructor
 @SuppressWarnings("ClassCanBeRecord")
 public class MidoGzipRequestInterceptor implements ClientHttpRequestInterceptor {

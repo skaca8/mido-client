@@ -21,6 +21,11 @@ import java.nio.ByteBuffer;
 import java.nio.charset.*;
 import java.util.Optional;
 
+/**
+ * Internal. Implementation detail of mido-client's interceptor chain; instances are wired by
+ * {@link MidoClientFactory} according to the configured {@link io.github.hyunjun.mido.constant.LogLevel}.
+ * Not part of the public API — visibility may be reduced in a future minor release.
+ */
 @Slf4j
 @RequiredArgsConstructor
 @SuppressWarnings("ClassCanBeRecord")
