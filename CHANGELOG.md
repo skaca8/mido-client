@@ -5,6 +5,31 @@ All notable changes to `mido-client` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-07-01
+
+### Added
+
+- **Pluggable HTTP transport via `client-type` (`simple` / `jdk`).** Choose the underlying request
+  factory globally (`mido-client.client-type`) or per endpoint
+  (`channels.<name>.<endpoint>.client-type`); an endpoint inherits the global value when unset.
+  The default is `simple` (`SimpleClientHttpRequestFactory`, `HttpURLConnection`), so existing
+  configurations keep their current behavior. `jdk` uses `JdkClientHttpRequestFactory`
+  (`java.net.http.HttpClient`), giving each channel its own connection pool and HTTP/2 — the
+  transport that actually realizes per-channel connection isolation. The JDK transport follows
+  redirects (`Redirect.NORMAL`, which refuses HTTPS→HTTP downgrades) and applies the same
+  `connect-timeout-seconds` / `read-timeout-seconds`.
+
+### Changed
+
+- **Removed duplicated default values between `MidoClientProperties` and `MidoClientFactory`.**
+  Timeout and gzip defaults now live solely in the properties class; the factory-side `?:` fallbacks
+  (a second, drift-prone source of truth) were removed. `read-timeout-seconds`,
+  `connect-timeout-seconds`, `gzip.min-size`, and `gzip.max-decompressed-size` are now `@NotNull`, so
+  an explicitly-null YAML value fails fast at startup instead of silently falling back to a default.
+- **Internal: extracted a logging `emit()` helper** in `MidoLoggingInterceptor`, unifying the
+  console/file logger selection across request and response logging. No behavior change.
+- **Internal: replaced wildcard imports** (`java.util.*`, `java.nio.charset.*`) with explicit imports.
+
 ## [1.2.0] - 2026-05-26
 
 ### ⚠️ Breaking Changes
@@ -61,5 +86,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Maven Central release. See git history for changes prior to 1.2.0.
 
+[1.3.0]: https://github.com/skaca8/mido-client/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/skaca8/mido-client/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/skaca8/mido-client/releases/tag/v1.1.2

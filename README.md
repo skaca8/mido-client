@@ -31,6 +31,7 @@ factory classes, no repeated setup code.
 - **Per-endpoint authentication** — Bearer, Basic, API Key
 - **Smart charset detection** — Content-Type header → UTF-8 validation → channel default fallback
 - **Custom interceptors** — register any `ClientHttpRequestInterceptor` by class name in YAML
+- **Pluggable HTTP transport** — pick `simple` (default, `HttpURLConnection`) or `jdk` (`java.net.http.HttpClient`, per-channel connection pool + HTTP/2) globally or per endpoint
 - **Per-channel gzip** — opt-in request compression with `min-size` skip threshold; response auto-decompression with decompression-bomb defense cap (`max-decompressed-size`)
 - **Per-channel content type** — pick `json` (default) or `xml` per channel; the request `Content-Type` header is set automatically
 - **Fail-fast configuration validation** — `@Validated` Bean Validation rejects malformed YAML at startup with a `BindValidationException` indicating the offending field
@@ -63,7 +64,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:1.2.0'
+    implementation 'com.github.skaca8:mido-client:1.3.0'
 }
 ```
 
@@ -81,18 +82,18 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.2.0</version>
+    <version>1.3.0</version>
 </dependency>
 ```
 
-> To use a specific release, replace `1.2.0` with a tag or a commit hash.
+> To use a specific release, replace `1.3.0` with a tag or a commit hash.
 
 #### via Maven Central (published release)
 
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:1.2.0'
+implementation 'io.github.skaca8:mido-client:1.3.0'
 ```
 
 **Maven**
@@ -102,7 +103,7 @@ implementation 'io.github.skaca8:mido-client:1.2.0'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.2.0</version>
+    <version>1.3.0</version>
 </dependency>
 ```
 
@@ -205,6 +206,7 @@ public class PaymentService extends BaseExternalApi {
 | `read-timeout-seconds`    | Long           | `60`      | Read timeout                                                  |
 | `connect-timeout-seconds` | Long           | `3`       | Connection timeout                                            |
 | `log`                     | LogLevel       | `console` | `off` / `console` / `file` / `all`                            |
+| `client-type`             | ClientType     | (inherits global) | `simple` / `jdk` — HTTP transport for this endpoint; overrides `mido-client.client-type` |
 | `authorization.type`      | TokenType      | -         | `bearer` / `basic` / `api_key`                                |
 | `authorization.token`     | String         | -         | Authentication token value                                    |
 | `headers`                 | List           | -         | Static headers to attach to every request                     |
@@ -216,9 +218,10 @@ public class PaymentService extends BaseExternalApi {
 
 ### Global
 
-| Property              | Type    | Default | Description                       |
-|-----------------------|---------|---------|-----------------------------------|
-| `mido-client.enabled` | Boolean | `false` | Enable/disable the entire library |
+| Property                  | Type       | Default  | Description                                                        |
+|---------------------------|------------|----------|--------------------------------------------------------------------|
+| `mido-client.enabled`     | Boolean    | `false`  | Enable/disable the entire library                                  |
+| `mido-client.client-type` | ClientType | `simple` | Default HTTP transport for every channel; a per-endpoint `client-type` overrides it |
 
 ### Configuration Validation
 
@@ -412,6 +415,33 @@ mido-client:
 - `max-decompressed-size` defends against decompression bombs — if the decompressed response exceeds the cap, an `IOException` is thrown immediately and memory stays bounded to roughly buffer + cap.
 
 Interceptors are ordered so that logging always sees plain-text bodies while the network carries compressed bytes.
+
+### HTTP Transport (`simple` / `jdk`)
+
+Choose the underlying request factory globally or per endpoint. The default is `simple`, so existing configurations keep their current behavior.
+
+```yaml
+mido-client:
+  enabled: true
+  client-type: jdk               # global default for every channel
+  channels:
+    payment:
+      primary:
+        url: https://api.payment.com
+        # inherits global -> jdk
+      secondary:
+        url: https://process.payment.com
+        client-type: simple      # override just this endpoint
+```
+
+| Value    | Backing factory                  | Connection reuse                          | HTTP/2 |
+|----------|----------------------------------|-------------------------------------------|--------|
+| `simple` | `SimpleClientHttpRequestFactory` | JVM-global `HttpURLConnection` keep-alive | No     |
+| `jdk`    | `JdkClientHttpRequestFactory`    | Per-channel `HttpClient` connection pool  | Yes    |
+
+**When to pick `jdk`**: since a `simple` client reuses connections through the JVM-global keep-alive cache, all channels effectively share one pool. `jdk` gives each channel/endpoint its own `HttpClient` — and therefore its own connection pool — which is what actually delivers per-channel connection isolation. Prefer it for high-throughput channels or when HTTP/2 matters.
+
+**Behavior notes**: the `jdk` transport follows redirects (`Redirect.NORMAL`, which refuses HTTPS→HTTP downgrades) and applies `connect-timeout-seconds` / `read-timeout-seconds` the same way. Unlike `simple`, the JDK `HttpClient` does not use the JVM's default proxy selector unless explicitly configured. Both transports keep the logging and gzip interceptor behavior unchanged.
 
 ### ChannelContext & MDC
 

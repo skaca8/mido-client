@@ -1,5 +1,6 @@
 package io.github.hyunjun.mido.config;
 
+import io.github.hyunjun.mido.constant.ClientType;
 import io.github.hyunjun.mido.constant.ContentType;
 import io.github.hyunjun.mido.constant.LogLevel;
 import io.github.hyunjun.mido.constant.TokenType;
@@ -40,6 +41,14 @@ public class MidoClientProperties {
 
     /** Master switch — when {@code false} (default), the auto-configuration is skipped entirely. */
     Boolean enabled = false;
+
+    /**
+     * Default HTTP transport for every channel. A per-endpoint {@code client-type} overrides this;
+     * an endpoint that leaves it unset inherits this value. Defaults to {@link ClientType#SIMPLE}
+     * so existing configurations keep their current transport behavior.
+     */
+    @NotNull
+    ClientType clientType = ClientType.SIMPLE;
 
     /** Channel definitions keyed by channel name. Keys are normalized to lowercase at bind time. */
     Map<String, @Valid ChannelConfig> channels = new HashMap<>();
@@ -94,10 +103,12 @@ public class MidoClientProperties {
         String url;
 
         /** Read timeout in seconds. Must be positive. Defaults to {@code 60}. */
+        @NotNull
         @Positive
         Long readTimeoutSeconds = 60L;
 
         /** Connect timeout in seconds. Must be positive. Defaults to {@code 3}. */
+        @NotNull
         @Positive
         Long connectTimeoutSeconds = 3L;
 
@@ -110,6 +121,13 @@ public class MidoClientProperties {
 
         /** Logging mode for this endpoint. Defaults to {@link LogLevel#CONSOLE}. */
         LogLevel log = LogLevel.CONSOLE;
+
+        /**
+         * HTTP transport for this endpoint. When {@code null} (the default), inherits the top-level
+         * {@code mido-client.client-type}. Set it here to override the transport for a single
+         * endpoint. See {@link ClientType}.
+         */
+        ClientType clientType;
 
         /**
          * Fully-qualified class names of {@code ClientHttpRequestInterceptor} implementations to
@@ -145,6 +163,7 @@ public class MidoClientProperties {
         Boolean response = false;
 
         /** Request bodies smaller than this many bytes skip compression. Defaults to {@code 1024}. */
+        @NotNull
         @PositiveOrZero
         Integer minSize = 1024;
 
@@ -153,6 +172,7 @@ public class MidoClientProperties {
          * {@link java.io.IOException} is thrown immediately. Defaults to {@code 10 * 1024 * 1024}
          * (10 MB).
          */
+        @NotNull
         @Positive
         Integer maxDecompressedSize = 10 * 1024 * 1024;
 

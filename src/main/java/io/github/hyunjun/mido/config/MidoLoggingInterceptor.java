@@ -18,7 +18,11 @@ import org.springframework.util.StringUtils;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.charset.*;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 /**
@@ -60,13 +64,7 @@ public class MidoLoggingInterceptor implements ClientHttpRequestInterceptor {
 
             String logMessage = "[mido-client request] channelAction: {}, method: {}, url: {}, body: {}";
 
-            if (LogLevel.ALL == effectiveLogLevel) {
-                log.info(logMessage, channelAction, request.getMethod(), request.getURI(), bodyString);
-                fileLog.info(logMessage, channelAction, request.getMethod(), request.getURI(), bodyString);
-            } else {
-                Logger logger = getLogger(effectiveLogLevel);
-                logger.info(logMessage, channelAction, request.getMethod(), request.getURI(), bodyString);
-            }
+            emit(effectiveLogLevel, logMessage, channelAction, request.getMethod(), request.getURI(), bodyString);
         } catch (Exception e) {
             log.error("Error logging request: {}", e.getMessage(), e);
         }
@@ -88,13 +86,7 @@ public class MidoLoggingInterceptor implements ClientHttpRequestInterceptor {
 
             logMessage.append(", body: ").append(readResponseBody(response, defaultCharset));
 
-            if (LogLevel.ALL == effectiveLogLevel) {
-                log.info("{}", logMessage);
-                fileLog.info("{}", logMessage);
-            } else {
-                Logger logger = getLogger(effectiveLogLevel);
-                logger.info("{}", logMessage);
-            }
+            emit(effectiveLogLevel, "{}", logMessage);
         } catch (Exception e) {
             log.error("Error logging response: {}", e.getMessage(), e);
         }
@@ -138,6 +130,15 @@ public class MidoLoggingInterceptor implements ClientHttpRequestInterceptor {
         }
 
         return defaultCharset;
+    }
+
+    private void emit(LogLevel effectiveLogLevel, String format, Object... args) {
+        if (LogLevel.ALL == effectiveLogLevel) {
+            log.info(format, args);
+            fileLog.info(format, args);
+        } else {
+            getLogger(effectiveLogLevel).info(format, args);
+        }
     }
 
     private Logger getLogger(LogLevel logLevel) {

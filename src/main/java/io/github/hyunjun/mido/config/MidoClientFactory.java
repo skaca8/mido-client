@@ -1,5 +1,6 @@
 package io.github.hyunjun.mido.config;
 
+import io.github.hyunjun.mido.constant.ClientType;
 import io.github.hyunjun.mido.constant.ContentType;
 import io.github.hyunjun.mido.constant.EndpointType;
 import io.github.hyunjun.mido.constant.LogLevel;
@@ -8,16 +9,23 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.BufferingClientHttpRequestFactory;
+import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.web.client.RestClient;
 
+import java.net.http.HttpClient;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -67,6 +75,7 @@ public class MidoClientFactory {
      */
     public RestClient.Builder baseRestClient(String baseUrl, MidoClientProperties.EndpointConfig endpointConfig, Charset charset, ContentType contentType) {
         BufferingClientHttpRequestFactory requestFactory = createRequestFactory(
+                resolveClientType(endpointConfig),
                 endpointConfig.getConnectTimeoutSeconds(),
                 endpointConfig.getReadTimeoutSeconds()
         );
@@ -163,12 +172,10 @@ public class MidoClientFactory {
     private void addGzipInterceptors(List<ClientHttpRequestInterceptor> interceptorList, MidoClientProperties.Gzip gzip) {
         if (gzip == null) return;
         if (Boolean.TRUE.equals(gzip.getRequest())) {
-            int minSize = gzip.getMinSize() != null ? gzip.getMinSize() : 1024;
-            interceptorList.add(new MidoGzipRequestInterceptor(minSize));
+            interceptorList.add(new MidoGzipRequestInterceptor(gzip.getMinSize()));
         }
         if (Boolean.TRUE.equals(gzip.getResponse())) {
-            int maxSize = gzip.getMaxDecompressedSize() != null ? gzip.getMaxDecompressedSize() : 10 * 1024 * 1024;
-            interceptorList.add(new MidoGzipResponseInterceptor(maxSize));
+            interceptorList.add(new MidoGzipResponseInterceptor(gzip.getMaxDecompressedSize()));
         }
     }
 
@@ -242,11 +249,43 @@ public class MidoClientFactory {
         converters.add(jacksonConverter);
     }
 
-    private BufferingClientHttpRequestFactory createRequestFactory(Long connectTimeoutSeconds, Long readTimeoutSeconds) {
+    /**
+     * Effective transport for an endpoint: the endpoint's own {@code client-type} if set, otherwise
+     * the top-level {@code mido-client.client-type} (which itself defaults to {@link ClientType#SIMPLE}).
+     */
+    ClientType resolveClientType(MidoClientProperties.EndpointConfig endpointConfig) {
+        return endpointConfig.getClientType() != null
+                ? endpointConfig.getClientType()
+                : midoClientProperties.getClientType();
+    }
+
+    private BufferingClientHttpRequestFactory createRequestFactory(ClientType clientType, long connectTimeoutSeconds, long readTimeoutSeconds) {
+        ClientHttpRequestFactory factory = switch (clientType) {
+            case JDK -> createJdkRequestFactory(connectTimeoutSeconds, readTimeoutSeconds);
+            case SIMPLE -> createSimpleRequestFactory(connectTimeoutSeconds, readTimeoutSeconds);
+        };
+        // BufferingClientHttpRequestFactory 래핑 유지: 로깅 인터셉터가 응답 body를 재read해야 한다.
+        return new BufferingClientHttpRequestFactory(factory);
+    }
+
+    private ClientHttpRequestFactory createSimpleRequestFactory(long connectTimeoutSeconds, long readTimeoutSeconds) {
         SimpleClientHttpRequestFactory simpleFactory = new SimpleClientHttpRequestFactory();
-        simpleFactory.setConnectTimeout(Duration.ofSeconds(connectTimeoutSeconds != null ? connectTimeoutSeconds : 3));
-        simpleFactory.setReadTimeout(Duration.ofSeconds(readTimeoutSeconds != null ? readTimeoutSeconds : 60));
-        return new BufferingClientHttpRequestFactory(simpleFactory);
+        simpleFactory.setConnectTimeout(Duration.ofSeconds(connectTimeoutSeconds));
+        simpleFactory.setReadTimeout(Duration.ofSeconds(readTimeoutSeconds));
+        return simpleFactory;
+    }
+
+    private ClientHttpRequestFactory createJdkRequestFactory(long connectTimeoutSeconds, long readTimeoutSeconds) {
+        // connectTimeout은 HttpClient 빌더에, readTimeout은 팩토리에 지정된다.
+        // followRedirects(NORMAL)로 기존 SimpleClientHttpRequestFactory의 리다이렉트 추종 동작을 맞춘다.
+        // Executor는 지정하지 않는다 — HttpClient 기본 executor를 쓰고 라이프사이클 소유권을 넘기지 않는다.
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
+        JdkClientHttpRequestFactory jdkFactory = new JdkClientHttpRequestFactory(httpClient);
+        jdkFactory.setReadTimeout(Duration.ofSeconds(readTimeoutSeconds));
+        return jdkFactory;
     }
 
 }

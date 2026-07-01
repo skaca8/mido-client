@@ -1,10 +1,12 @@
 package io.github.hyunjun.mido.integration;
 
 import io.github.hyunjun.mido.config.MidoClientAutoConfiguration;
+import io.github.hyunjun.mido.config.MidoClientFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,6 +22,21 @@ class JsonPlaceholderIntegrationTest {
 
     @Autowired
     private JsonPlaceholderService jsonPlaceholderService;
+
+    @Autowired
+    private MidoClientFactory midoClientFactory;
+
+    @Test
+    void shouldGetPostOverJdkTransport() {
+        // Real end-to-end request through the JdkClientHttpRequestFactory (client-type: jdk) transport.
+        RestClient jdkClient = midoClientFactory.getOrCreateClient("jsonplaceholderjdk");
+
+        Post post = jdkClient.get().uri("/posts/{id}", 1).retrieve().body(Post.class);
+
+        assertThat(post).isNotNull();
+        assertThat(post.getId()).isEqualTo(1);
+        assertThat(post.getTitle()).isNotBlank();
+    }
 
     @Test
     void shouldGetPost() {

@@ -29,6 +29,7 @@
 - **엔드포인트별 인증** — Bearer, Basic, API Key 방식 지원
 - **스마트 인코딩 감지** — Content-Type 헤더 → UTF-8 유효성 검사 → 채널 기본값 순으로 자동 결정
 - **커스텀 인터셉터** — `ClientHttpRequestInterceptor` 구현체를 YAML에 클래스명으로 등록
+- **교체 가능한 HTTP 전송** — `simple`(기본, `HttpURLConnection`) / `jdk`(`java.net.http.HttpClient`, 채널별 커넥션 풀 + HTTP/2) 중 전역 또는 엔드포인트 단위로 선택
 - **채널별 gzip 압축** — 요청 바디는 `min-size` 임계값 이상일 때만 압축, 응답은 자동 해제 + 압축 폭탄 방어 cap(`max-decompressed-size`)
 - **채널별 컨텐트 타입** — `json`(기본) / `xml` 중 채널 단위로 선택, 요청 `Content-Type` 헤더가 자동 설정됨
 - **부팅 시 설정 검증** — `@Validated` Bean Validation으로 잘못된 YAML을 시작 시점에 거부, `BindValidationException`에 어떤 필드가 잘못되었는지 명시
@@ -59,7 +60,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:1.2.0'
+    implementation 'com.github.skaca8:mido-client:1.3.0'
 }
 ```
 
@@ -77,18 +78,18 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.2.0</version>
+    <version>1.3.0</version>
 </dependency>
 ```
 
-> 특정 릴리즈를 사용하려면 `1.2.0`을 원하는 태그 또는 커밋 해시로 변경하세요.
+> 특정 릴리즈를 사용하려면 `1.3.0`을 원하는 태그 또는 커밋 해시로 변경하세요.
 
 #### Maven Central을 통한 방법 (정식 릴리즈)
 
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:1.2.0'
+implementation 'io.github.skaca8:mido-client:1.3.0'
 ```
 
 **Maven**
@@ -98,7 +99,7 @@ implementation 'io.github.skaca8:mido-client:1.2.0'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.2.0</version>
+    <version>1.3.0</version>
 </dependency>
 ```
 
@@ -200,6 +201,7 @@ public class PaymentService extends BaseExternalApi {
 | `read-timeout-seconds`    | Long           | `60`      | 읽기 타임아웃 (초)                                    |
 | `connect-timeout-seconds` | Long           | `3`       | 연결 타임아웃 (초)                                    |
 | `log`                     | LogLevel       | `console` | `off` / `console` / `file` / `all`             |
+| `client-type`             | ClientType     | (전역값 상속)  | `simple` / `jdk` — 이 엔드포인트의 HTTP 전송, `mido-client.client-type`를 오버라이드 |
 | `authorization.type`      | TokenType      | -         | `bearer` / `basic` / `api_key`                 |
 | `authorization.token`     | String         | -         | 인증 토큰 값                                        |
 | `headers`                 | List           | -         | 모든 요청에 고정으로 추가할 헤더 목록                          |
@@ -211,9 +213,10 @@ public class PaymentService extends BaseExternalApi {
 
 ### 전역 설정
 
-| 프로퍼티                  | 타입      | 기본값     | 설명           |
-|-----------------------|---------|---------|--------------|
-| `mido-client.enabled` | Boolean | `false` | 라이브러리 활성화 여부 |
+| 프로퍼티                      | 타입         | 기본값      | 설명                                          |
+|---------------------------|------------|----------|---------------------------------------------|
+| `mido-client.enabled`     | Boolean    | `false`  | 라이브러리 활성화 여부                                 |
+| `mido-client.client-type` | ClientType | `simple` | 모든 채널의 기본 HTTP 전송, 엔드포인트별 `client-type`로 오버라이드 가능 |
 
 ### 설정 검증
 
@@ -401,6 +404,33 @@ mido-client:
 - `max-decompressed-size`는 압축 폭탄(decompression bomb) 방어 — 해제 결과가 cap을 넘으면 즉시 `IOException`이 발생하며 메모리 사용량은 버퍼 + cap 수준으로 제한됩니다.
 
 인터셉터 등록 순서가 보존되어 로깅에는 항상 평문 바디가 찍히고, 네트워크에는 압축된 바이트가 흘러갑니다.
+
+### HTTP 전송 방식 (`simple` / `jdk`)
+
+하부 request factory를 전역 또는 엔드포인트 단위로 선택합니다. 기본값은 `simple`이라 기존 설정의 동작은 그대로 유지됩니다.
+
+```yaml
+mido-client:
+  enabled: true
+  client-type: jdk               # 모든 채널의 전역 기본값
+  channels:
+    payment:
+      primary:
+        url: https://api.payment.com
+        # 전역값 상속 -> jdk
+      secondary:
+        url: https://process.payment.com
+        client-type: simple      # 이 엔드포인트만 오버라이드
+```
+
+| 값        | 하부 factory                      | 커넥션 재사용                             | HTTP/2 |
+|----------|----------------------------------|-------------------------------------|--------|
+| `simple` | `SimpleClientHttpRequestFactory` | JVM 전역 `HttpURLConnection` keep-alive | 미지원    |
+| `jdk`    | `JdkClientHttpRequestFactory`    | 채널별 `HttpClient` 커넥션 풀               | 지원     |
+
+**`jdk`를 선택하는 이유**: `simple` 클라이언트는 JVM 전역 keep-alive 캐시로 커넥션을 재사용하므로 모든 채널이 사실상 하나의 풀을 공유합니다. `jdk`는 채널/엔드포인트마다 독립된 `HttpClient`(= 독립 커넥션 풀)를 주므로, 이 라이브러리가 지향하는 채널별 커넥션 격리를 실제로 구현합니다. 고throughput 채널이나 HTTP/2가 필요한 경우 권장합니다.
+
+**동작 참고**: `jdk` 전송은 리다이렉트를 따르며(`Redirect.NORMAL` — HTTPS→HTTP 다운그레이드는 거부), `connect-timeout-seconds` / `read-timeout-seconds`를 동일하게 적용합니다. `simple`과 달리 JDK `HttpClient`는 명시적으로 설정하지 않는 한 JVM 기본 프록시 셀렉터를 사용하지 않습니다. 로깅/gzip 인터셉터 동작은 두 전송 모두 동일합니다.
 
 ### ChannelContext와 MDC
 

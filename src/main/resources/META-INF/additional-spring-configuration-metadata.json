@@ -88,6 +88,32 @@
           "description": "API Key authentication"
         }
       ]
+    },
+    {
+      "name": "mido-client.channels.*.primary.client-type",
+      "values": [
+        {
+          "value": "simple",
+          "description": "SimpleClientHttpRequestFactory (HttpURLConnection); JVM-global keep-alive. Default."
+        },
+        {
+          "value": "jdk",
+          "description": "JdkClientHttpRequestFactory (java.net.http.HttpClient); per-channel pool + HTTP/2."
+        }
+      ]
+    },
+    {
+      "name": "mido-client.channels.*.secondary.client-type",
+      "values": [
+        {
+          "value": "simple",
+          "description": "SimpleClientHttpRequestFactory (HttpURLConnection); JVM-global keep-alive. Default."
+        },
+        {
+          "value": "jdk",
+          "description": "JdkClientHttpRequestFactory (java.net.http.HttpClient); per-channel pool + HTTP/2."
+        }
+      ]
     }
   ]
 }

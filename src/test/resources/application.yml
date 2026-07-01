@@ -49,3 +49,13 @@ mido-client:
         read-timeout-seconds: 10
         connect-timeout-seconds: 5
         log: console
+
+    jsonplaceholderjdk:
+      title: "JSONPlaceholder Test API (JDK transport)"
+      charset: UTF-8
+      primary:
+        url: https://jsonplaceholder.typicode.com
+        read-timeout-seconds: 10
+        connect-timeout-seconds: 5
+        log: console
+        client-type: jdk

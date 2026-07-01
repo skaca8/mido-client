@@ -1,5 +1,6 @@
 package io.github.hyunjun.mido.config;
 
+import io.github.hyunjun.mido.constant.ClientType;
 import io.github.hyunjun.mido.constant.ContentType;
 import io.github.hyunjun.mido.constant.EndpointType;
 import io.github.hyunjun.mido.constant.LogLevel;
@@ -342,6 +343,55 @@ class MidoClientFactoryTest {
                 .hasMessageContaining("nodefaultctor")
                 .hasStackTraceContaining("Failed to instantiate interceptor")
                 .hasStackTraceContaining(InterceptorWithoutNoArgCtor.class.getName());
+    }
+
+    @Test
+    void shouldResolveEndpointClientTypeOverGlobalDefault() {
+        // Given - global SIMPLE, endpoint explicitly JDK
+        properties.setClientType(ClientType.SIMPLE);
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+        endpoint.setClientType(ClientType.JDK);
+
+        // When & Then - endpoint override wins
+        assertThat(factory.resolveClientType(endpoint)).isEqualTo(ClientType.JDK);
+    }
+
+    @Test
+    void shouldInheritGlobalClientTypeWhenEndpointUnset() {
+        // Given - global JDK, endpoint leaves client-type null
+        properties.setClientType(ClientType.JDK);
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+
+        // When & Then - inherits global
+        assertThat(endpoint.getClientType()).isNull();
+        assertThat(factory.resolveClientType(endpoint)).isEqualTo(ClientType.JDK);
+    }
+
+    @Test
+    void shouldDefaultToSimpleClientTypeWhenNothingConfigured() {
+        // Given - neither global nor endpoint set (global defaults to SIMPLE)
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+
+        // When & Then
+        assertThat(properties.getClientType()).isEqualTo(ClientType.SIMPLE);
+        assertThat(factory.resolveClientType(endpoint)).isEqualTo(ClientType.SIMPLE);
+    }
+
+    @Test
+    void shouldCreateClientWithJdkClientType() {
+        // Given - exercises the JdkClientHttpRequestFactory build path
+        MidoClientProperties.ChannelConfig channelConfig = new MidoClientProperties.ChannelConfig();
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+        endpoint.setUrl("https://jdk.test.com");
+        endpoint.setClientType(ClientType.JDK);
+        channelConfig.setPrimary(endpoint);
+        properties.getChannels().put("jdkchannel", channelConfig);
+
+        // When
+        RestClient client = factory.getOrCreateClient("jdkchannel");
+
+        // Then
+        assertThat(client).isNotNull();
     }
 
     public static class NotAnInterceptor {
