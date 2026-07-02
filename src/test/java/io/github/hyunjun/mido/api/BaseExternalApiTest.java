@@ -3,6 +3,7 @@ package io.github.hyunjun.mido.api;
 import io.github.hyunjun.mido.context.ChannelContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -12,7 +13,8 @@ class BaseExternalApiTest {
 
     @AfterEach
     void tearDown() {
-        ChannelContext.clear();
+        // ScopedValue auto-unbinds at scope exit; clear MDC for hygiene between tests.
+        MDC.clear();
     }
 
     @Test

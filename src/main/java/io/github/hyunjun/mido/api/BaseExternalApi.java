@@ -11,7 +11,7 @@ import java.util.function.Supplier;
  * <p>Subclasses provide {@link #getChannelName()} once, then wrap each external call in
  * {@link #withDefaultChannelAction(String, Supplier) withDefaultChannelAction(...)} so the
  * {@link ChannelContext} (and SLF4J MDC) is populated for the duration of the call. The action key
- * is formatted as {@code "<channelName>.<action>"} and is automatically cleared on both normal
+ * is formatted as {@code "<channelName>.<action>"} and is automatically unbound on both normal
  * return and exception.
  *
  * <p>Typical usage:
@@ -39,9 +39,9 @@ public abstract class BaseExternalApi {
     protected abstract String getChannelName();
 
     /**
-     * Runs {@code supplier} with {@code ChannelContext.channelAction} set to
-     * {@code "<channelName>.<action>"}; the context is cleared in a {@code finally} block so it
-     * remains clean on both success and exception paths.
+     * Runs {@code supplier} with the channel action {@code "<channelName>.<action>"} bound via
+     * {@link ChannelContext#callWithChannelAction}; the binding is scoped to the call and
+     * automatically released on both success and exception paths.
      *
      * @param action   short action name (e.g. {@code "processPayment"})
      * @param supplier the call to make while the context is bound
@@ -50,17 +50,15 @@ public abstract class BaseExternalApi {
      */
     protected <T> T withDefaultChannelAction(String action, Supplier<T> supplier) {
         String channelAction = getChannelName() + "." + action;
-        ChannelContext.setChannelAction(channelAction);
-
-        try {
-            log.debug("Starting channel action: {}", channelAction);
-            return supplier.get();
-        } catch (Exception e) {
-            log.error("Failed channel action: {}", channelAction, e);
-            throw e;
-        } finally {
-            ChannelContext.clear();
-        }
+        return ChannelContext.callWithChannelAction(channelAction, () -> {
+            try {
+                log.debug("Starting channel action: {}", channelAction);
+                return supplier.get();
+            } catch (Exception e) {
+                log.error("Failed channel action: {}", channelAction, e);
+                throw e;
+            }
+        });
     }
 
     /**

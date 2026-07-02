@@ -33,18 +33,20 @@
 - **채널별 gzip 압축** — 요청 바디는 `min-size` 임계값 이상일 때만 압축, 응답은 자동 해제 + 압축 폭탄 방어 cap(`max-decompressed-size`)
 - **채널별 컨텐트 타입** — `json`(기본) / `xml` 중 채널 단위로 선택, 요청 `Content-Type` 헤더가 자동 설정됨
 - **부팅 시 설정 검증** — `@Validated` Bean Validation으로 잘못된 YAML을 시작 시점에 거부, `BindValidationException`에 어떤 필드가 잘못되었는지 명시
-- **ChannelContext + MDC 연동** — 스레드 로컬 채널 액션 추적, SLF4J MDC와 통합되어 로그에 자동 포함
+- **ChannelContext + MDC 연동** — 스코프 기반(`ScopedValue`) 채널 액션 추적, SLF4J MDC와 통합되어 로그에 자동 포함
 - **자동 설정** — `mido-client.enabled: true` 프로퍼티 하나로 활성화
 
 ## 요구 사항
 
-| 항목          | 최소 버전  |
-|-------------|--------|
-| Java        | 17     |
-| Spring Boot | 3.2.0  |
-| Gradle      | 8.14.4 |
+| 항목          | 버전                       |
+|-------------|--------------------------|
+| Java        | 25                       |
+| Spring Boot | 3.5.x (3.5.16으로 빌드·검증)   |
+| Gradle      | 8.14.4                   |
 
-> `RestClient`는 Spring Framework 6.1(Spring Boot 3.2)에서 도입되었으므로 Spring Boot 3.2 이상이 필요합니다.
+> `ChannelContext`가 정식 `java.lang.ScopedValue` API(JEP 506, Java 25) 기반이므로 Java 25가 필요합니다.
+> 클래스패스 스캐닝(ASM)이 Java 25 바이트코드를 읽을 수 있는 Spring Framework 6.2 릴리즈가 필요합니다(최신 6.2.x 패치,
+> Spring Boot 3.2.x는 불가). 이 라이브러리는 Spring Boot 3.5.16으로 빌드·검증되었습니다.
 
 ## 빠른 시작
 
@@ -60,7 +62,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:1.3.0'
+    implementation 'com.github.skaca8:mido-client:2.0.0'
 }
 ```
 
@@ -78,18 +80,18 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.3.0</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
-> 특정 릴리즈를 사용하려면 `1.3.0`을 원하는 태그 또는 커밋 해시로 변경하세요.
+> 특정 릴리즈를 사용하려면 `2.0.0`을 원하는 태그 또는 커밋 해시로 변경하세요.
 
 #### Maven Central을 통한 방법 (정식 릴리즈)
 
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:1.3.0'
+implementation 'io.github.skaca8:mido-client:2.0.0'
 ```
 
 **Maven**
@@ -99,7 +101,7 @@ implementation 'io.github.skaca8:mido-client:1.3.0'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.3.0</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
@@ -434,17 +436,19 @@ mido-client:
 
 ### ChannelContext와 MDC
 
-`BaseExternalApi.withDefaultChannelAction()`을 사용하면 `ChannelContext`가 자동으로 관리됩니다. 직접 사용하는 경우:
+`BaseExternalApi.withDefaultChannelAction()`을 사용하면 `ChannelContext`가 자동으로 관리됩니다. `ChannelContext`는
+`ScopedValue`(Java 25) 기반이라 액션이 호출의 동적 범위 동안만 바인딩되고 정상 반환·예외 모두에서 자동 해제됩니다 — 수동
+`set`/`clear`가 없습니다. 직접 사용하는 경우:
 
 ```java
-ChannelContext.setChannelAction("payment.processPayment");
-try{
-        // REST 호출 — MDC를 통해 모든 로그에 channelAction이 포함됨
-        }finally{
-        ChannelContext.
+// 반환값이 없는 형태
+ChannelContext.runWithChannelAction("payment.processPayment", () -> {
+    // REST 호출 — MDC를 통해 모든 로그에 channelAction이 포함됨
+});
 
-clear();
-}
+// 반환값이 있는 형태
+String status = ChannelContext.callWithChannelAction("payment.processPayment", () ->
+        restClient.get().uri("/status").retrieve().body(String.class));
 ```
 
 `logback.xml` 패턴에서 `channelAction` 키를 사용할 수 있습니다.

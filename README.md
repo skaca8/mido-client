@@ -35,20 +35,21 @@ factory classes, no repeated setup code.
 - **Per-channel gzip** — opt-in request compression with `min-size` skip threshold; response auto-decompression with decompression-bomb defense cap (`max-decompressed-size`)
 - **Per-channel content type** — pick `json` (default) or `xml` per channel; the request `Content-Type` header is set automatically
 - **Fail-fast configuration validation** — `@Validated` Bean Validation rejects malformed YAML at startup with a `BindValidationException` indicating the offending field
-- **ChannelContext with MDC** — thread-local channel action tracking, integrated with SLF4J MDC for distributed log
-  tracing
+- **ChannelContext with MDC** — scoped (`ScopedValue`) channel action tracking, integrated with SLF4J MDC for
+  distributed log tracing
 - **Zero-code Auto-Configuration** — activated with a single `mido-client.enabled: true` property
 
 ## Requirements
 
-| Requirement | Minimum Version |
-|-------------|-----------------|
-| Java        | 17              |
-| Spring Boot | 3.2.0           |
-| Gradle      | 8.14.4          |
+| Requirement | Version                            |
+|-------------|------------------------------------|
+| Java        | 25                                 |
+| Spring Boot | 3.5.x (built & tested with 3.5.16) |
+| Gradle      | 8.14.4                             |
 
-> Spring Boot 3.2+ is required because `RestClient` was introduced in Spring Framework 6.1 (shipped with Spring Boot
-> 3.2).
+> Java 25 is required because `ChannelContext` is built on the final `java.lang.ScopedValue` API (JEP 506, Java 25).
+> Consumers need a Spring Framework 6.2 release whose bundled ASM can read Java 25 bytecode (recent 6.2.x patches;
+> Spring Boot 3.2.x cannot). This library is built and tested against Spring Boot 3.5.16.
 
 ## Quick Start
 
@@ -64,7 +65,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:1.3.0'
+    implementation 'com.github.skaca8:mido-client:2.0.0'
 }
 ```
 
@@ -82,18 +83,18 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.3.0</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
-> To use a specific release, replace `1.3.0` with a tag or a commit hash.
+> To use a specific release, replace `2.0.0` with a tag or a commit hash.
 
 #### via Maven Central (published release)
 
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:1.3.0'
+implementation 'io.github.skaca8:mido-client:2.0.0'
 ```
 
 **Maven**
@@ -103,7 +104,7 @@ implementation 'io.github.skaca8:mido-client:1.3.0'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>1.3.0</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
@@ -445,17 +446,19 @@ mido-client:
 
 ### ChannelContext & MDC
 
-`BaseExternalApi.withDefaultChannelAction()` sets `ChannelContext` automatically. For manual usage:
+`BaseExternalApi.withDefaultChannelAction()` binds `ChannelContext` automatically. `ChannelContext` is
+backed by a `ScopedValue` (Java 25): the action is bound only for the dynamic extent of the call and
+is auto-unbound on both return and exception — there is no manual `set`/`clear`. For direct usage:
 
 ```java
-ChannelContext.setChannelAction("payment.processPayment");
-try{
-        // your REST call — channelAction appears in all logs via MDC
-        }finally{
-        ChannelContext.
+// void form
+ChannelContext.runWithChannelAction("payment.processPayment", () -> {
+    // your REST call — channelAction appears in all logs via MDC
+});
 
-clear();
-}
+// value-returning form
+String status = ChannelContext.callWithChannelAction("payment.processPayment", () ->
+        restClient.get().uri("/status").retrieve().body(String.class));
 ```
 
 The action key `channelAction` is available in log patterns:

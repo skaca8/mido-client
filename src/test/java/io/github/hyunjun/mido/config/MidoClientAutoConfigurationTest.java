@@ -168,7 +168,7 @@ class MidoClientAutoConfigurationTest {
                 )
                 .run(context -> assertThat(context).hasFailed()
                         .getFailure()
-                        .hasStackTraceContaining("'name'"));
+                        .hasStackTraceContaining("headers[0].name"));
     }
 
     @Test
@@ -207,7 +207,7 @@ class MidoClientAutoConfigurationTest {
                 )
                 .run(context -> assertThat(context).hasFailed()
                         .getFailure()
-                        .hasStackTraceContaining("'primary'"));
+                        .hasStackTraceContaining("channels[test].primary"));
     }
 
     @Test
