@@ -119,11 +119,14 @@ publishing {
     }
 }
 
-signing {
-    def signingKey = ((findProperty('signingKey') ?: System.getenv('SIGNING_KEY')) as String)?.replace('\\n', '\n') ?: ''
-    def signingPassword = ((findProperty('signingPassword') ?: System.getenv('SIGNING_PASSWORD')) as String) ?: ''
-    useInMemoryPgpKeys(signingKey, signingPassword)
-    sign publishing.publications.maven
+// 서명 키가 있을 때만 서명 등록 — 키 없는 환경(예: JitPack)에서는 서명 없이 publish
+def signingKey = ((findProperty('signingKey') ?: System.getenv('SIGNING_KEY')) as String)?.replace('\\n', '\n') ?: ''
+def signingPassword = ((findProperty('signingPassword') ?: System.getenv('SIGNING_PASSWORD')) as String) ?: ''
+if (signingKey.trim()) {
+    signing {
+        useInMemoryPgpKeys(signingKey, signingPassword)
+        sign publishing.publications.maven
+    }
 }
 
 tasks.register('updateReadmeVersion') {
