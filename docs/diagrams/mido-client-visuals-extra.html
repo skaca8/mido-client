@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>mido-client 시각 분석 추가 6종</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --line: #2a313b;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --good: #56d364; --warn: #f0b72f; --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.55; }
+  header { margin-bottom: 28px; }
+  header h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.5px; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+  .grid { display: grid; grid-template-columns: 1fr; gap: 24px; }
+  @media (min-width: 1300px) { .grid { grid-template-columns: 1fr 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 22px 24px 18px; }
+  .card h2 { margin: 0 0 4px; font-size: 18px; color: var(--accent); }
+  .card .sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .mermaid { background: #0b0f14; border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px; overflow-x: auto; }
+  .caption { margin-top: 12px; font-size: 13px; color: var(--muted); }
+  footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+  code { background: #0b0f14; padding: 1px 5px; border-radius: 4px;
+    font-size: 12px; color: var(--good); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>mido-client — 추가 시각화 6종</h1>
+  <p>출처: <code>src/main/java/io/github/hyunjun/mido/**</code> 실제 구현 기반</p>
+</header>
+
+<div class="grid">
+
+  <!-- 화면 5. ChannelContext 라이프사이클 -->
+  <section class="card">
+    <h2>화면 5. ChannelContext 라이프사이클</h2>
+    <p class="sub">ThreadLocal + MDC 가 어떤 시점에 set/clear 되는지</p>
+    <div class="mermaid">
+stateDiagram-v2
+    [*] --> Idle: 새 스레드
+    Idle --> Bound: withDefaultChannelAction("action")\nset(channel + "." + action)
+    Bound --> Logging: RestClient 호출\nLoggingInterceptor 가\nChannelContext.getChannelAction() 읽음
+    Logging --> Bound: 다음 인터셉터 흐름
+    Bound --> Cleared: finally\nChannelContext.clear()
+    Cleared --> Idle: 스레드 풀로 반환
+    Bound --> Error: 예외 발생
+    Error --> Cleared: finally 가 여전히 clear() 호출
+    note right of Cleared
+      ThreadLocal.remove + MDC.remove
+      ThreadLocal 누수 방지
+    end note
+    note right of Bound
+      MDC 패턴 %X{channelAction}
+      에서 즉시 사용 가능
+    end note
+    </div>
+    <p class="caption">finally 블록 덕에 예외 경로에서도 반드시 clear()가 호출됩니다. 다만 비동기로 스레드가 바뀌면 ThreadLocal/MDC는 따라가지 않으므로 별도 전파가 필요합니다.</p>
+  </section>
+
+  <!-- 화면 6. 응답 charset 결정 트리 -->
+  <section class="card">
+    <h2>화면 6. 응답 charset 결정 트리 — <code>smartDetectCharset</code></h2>
+    <p class="sub">3단계 폴백으로 한글 깨짐을 막는 로직</p>
+    <div class="mermaid">
+flowchart TB
+    R["응답 도착\nresponse.getHeaders()"]
+    Q1{"Content-Type 헤더에\ncharset 명시?"}
+    USE1["그 charset 사용\n예: UTF-8 / EUC-KR"]
+    Q2{"바이트가\n유효한 UTF-8?"}
+    USE2["UTF-8 사용\nCharsetDecoder REPORT 모드 통과"]
+    USE3["채널 기본값 사용\nchannelConfig.charset\n기본 UTF-8"]
+
+    R --> Q1
+    Q1 -->|"YES"| USE1
+    Q1 -->|"NO"| Q2
+    Q2 -->|"YES"| USE2
+    Q2 -->|"NO"| USE3
+
+    classDef good fill:#1d2b1f,stroke:#56d364,color:#e6edf3;
+    classDef neu fill:#1f2a3a,stroke:#58a6ff,color:#e6edf3;
+    class USE1,USE2,USE3 good;
+    class R,Q1,Q2 neu;
+    </div>
+    <p class="caption">레거시 EUC-KR 시스템과 모던 UTF-8 시스템을 한 코드 베이스에서 공존시킬 수 있는 핵심 폴백. 채널 단위 <code>charset</code> 옵션이 최종 안전망입니다.</p>
+  </section>
+
+  <!-- 화면 7. Gzip 의사결정 매트릭스 -->
+  <section class="card">
+    <h2>화면 7. Gzip 동작 매트릭스</h2>
+    <p class="sub">요청·응답이 각각 어떤 조건에서 압축/해제되는가</p>
+    <div class="mermaid">
+flowchart TB
+    subgraph REQ["요청 측 (MidoGzipRequestInterceptor)"]
+        direction TB
+        RQ1{"gzip.request\n== true?"}
+        RQ2{"body.length\n>= min-size?"}
+        RQOK["압축 + Content-Encoding gzip\nContent-Length 제거"]
+        RQNO["평문 그대로 전송"]
+        RQ1 -->|"NO"| RQNO
+        RQ1 -->|"YES"| RQ2
+        RQ2 -->|"NO"| RQNO
+        RQ2 -->|"YES"| RQOK
+    end
+
+    subgraph RES["응답 측 (MidoGzipResponseInterceptor)"]
+        direction TB
+        RS1{"gzip.response\n== true?"}
+        RS2["Accept-Encoding gzip 부착"]
+        RS3{"응답에\nContent-Encoding gzip?"}
+        RS4{"디컴프레션 결과\n<= max-decompressed-size?"}
+        RSOK["평문 응답 반환\nheaders에서 CE/CL 제거"]
+        RSERR["IOException\ndecompression bomb 방어"]
+        RSPASS["응답 그대로 통과"]
+        RS1 -->|"NO"| RSPASS
+        RS1 -->|"YES"| RS2
+        RS2 --> RS3
+        RS3 -->|"NO"| RSPASS
+        RS3 -->|"YES"| RS4
+        RS4 -->|"YES"| RSOK
+        RS4 -->|"NO"| RSERR
+    end
+
+    classDef good fill:#1d2b1f,stroke:#56d364,color:#e6edf3;
+    classDef bad fill:#2b1f1f,stroke:#f85149,color:#e6edf3;
+    classDef neu fill:#1f2a3a,stroke:#58a6ff,color:#e6edf3;
+    class RQOK,RSOK good;
+    class RSERR bad;
+    class RQNO,RSPASS neu;
+    </div>
+    <p class="caption">두 인터셉터가 독립적으로 토글됩니다. <code>min-size</code>는 작은 페이로드의 CPU 낭비를, <code>max-decompressed-size</code>는 OOM을 막는 1차 방어선입니다.</p>
+  </section>
+
+  <!-- 화면 8. 캐시 키 매트릭스 (heatmap 스타일) -->
+  <section class="card">
+    <h2>화면 8. 캐시 키 매트릭스</h2>
+    <p class="sub">채널 × 엔드포인트가 어떻게 캐시 엔트리로 매핑되는가</p>
+    <div class="mermaid">
+flowchart LR
+    subgraph CHANS["YAML 채널 정의"]
+        direction TB
+        C1["payment\nfirst + second"]
+        C2["auth\nfirst only"]
+        C3["notification\nfirst only"]
+        C4["bulk\nfirst + second"]
+    end
+
+    subgraph CACHE["ConcurrentHashMap 엔트리"]
+        direction TB
+        K1["payment-first\nRestClient #1"]
+        K2["payment-second\nRestClient #2"]
+        K3["auth-first\nRestClient #3"]
+        K4["notification-first\nRestClient #4"]
+        K5["bulk-first\nRestClient #5"]
+        K6["bulk-second\nRestClient #6"]
+    end
+
+    C1 -->|"getOrCreateClient payment"| K1
+    C1 -->|"getOrCreateClient payment, SECOND"| K2
+    C2 -->|"getOrCreateClient auth"| K3
+    C2 -.->|"SECOND 호출 시\nfirst 폴백"| K3
+    C3 -->|"getOrCreateClient notification"| K4
+    C4 -->|"getOrCreateClient bulk"| K5
+    C4 -->|"getOrCreateClient bulk, SECOND"| K6
+
+    classDef dual fill:#1d2b1f,stroke:#56d364,color:#e6edf3;
+    classDef single fill:#2b261a,stroke:#f0b72f,color:#e6edf3;
+    class C1,C4 dual;
+    class C2,C3 single;
+    </div>
+    <p class="caption">초록(듀얼)은 캐시 엔트리 2개, 노랑(단일)은 1개를 차지합니다. <code>auth</code>처럼 second 미정의 채널에 SECOND를 요청하면 점선처럼 first로 폴백합니다.</p>
+  </section>
+
+  <!-- 화면 9. 로그 레벨 분기 -->
+  <section class="card">
+    <h2>화면 9. 로그 레벨 분기</h2>
+    <p class="sub">한 메시지가 어디로 흘러가는가 — console / MidoClientFileLog</p>
+    <div class="mermaid">
+flowchart TB
+    MSG["요청/응답 발생\nMidoLoggingInterceptor"]
+    RESOLVE["resolveEffectiveLogLevel\nnull 이면 CONSOLE 폴백"]
+
+    SW{"effective\nlogLevel?"}
+    OFF["OFF\n아무 로그도 안 남김"]
+    CONSOLE["CONSOLE\nlog.info 콘솔로 출력"]
+    FILE["FILE\nfileLog.info\n로거 이름 = MidoClientFileLog"]
+    ALL["ALL\n콘솔 + 파일 동시"]
+
+    MSG --> RESOLVE --> SW
+    SW -->|"OFF"| OFF
+    SW -->|"CONSOLE"| CONSOLE
+    SW -->|"FILE"| FILE
+    SW -->|"ALL"| ALL
+
+    ALL --> CONSOLE
+    ALL --> FILE
+
+    classDef off fill:#2b1f1f,stroke:#f85149,color:#e6edf3;
+    classDef on fill:#1d2b1f,stroke:#56d364,color:#e6edf3;
+    classDef both fill:#2b261a,stroke:#f0b72f,color:#e6edf3;
+    class OFF off;
+    class CONSOLE,FILE on;
+    class ALL both;
+    </div>
+    <p class="caption"><code>ALL</code>은 콘솔과 <code>MidoClientFileLog</code> 양쪽으로 동시에 흘려보냅니다. logback에서 <code>MidoClientFileLog</code>라는 이름의 로거를 별도 appender에 묶어 파일로 분리할 수 있습니다.</p>
+  </section>
+
+  <!-- 화면 10. RestClient 빌더 조립 순서 -->
+  <section class="card">
+    <h2>화면 10. RestClient 빌더 조립 순서</h2>
+    <p class="sub"><code>baseRestClient()</code>가 1개의 RestClient를 만들 때 거치는 단계</p>
+    <div class="mermaid">
+flowchart TB
+    S1["baseUrl 설정\nendpoint.url"]
+    S2["BufferingClientHttpRequestFactory\n+ SimpleClientHttpRequestFactory\nconnect/read timeout 적용"]
+    S3["MessageConverters 재구성\n기존 clear() 후\nStringHttpMessageConverter\n+ MappingJackson2HttpMessageConverter"]
+    S4["기본 헤더 부착\nAccept: */*\nContent-Type: application/json"]
+    S5{"authorization\n설정 존재?"}
+    S6["Authorization 헤더\nprefix + ' ' + token"]
+    S7{"headers 리스트\n존재?"}
+    S8["커스텀 헤더 일괄 추가"]
+    S9["인터셉터 체인 조립\n커스텀 -> logging -> gzip"]
+    S10["build() 완료\nRestClient 인스턴스 반환"]
+
+    S1 --> S2 --> S3 --> S4 --> S5
+    S5 -->|"YES"| S6 --> S7
+    S5 -->|"NO"| S7
+    S7 -->|"YES"| S8 --> S9
+    S7 -->|"NO"| S9
+    S9 --> S10
+
+    classDef step fill:#1f2a3a,stroke:#58a6ff,color:#e6edf3;
+    classDef out fill:#1d2b1f,stroke:#56d364,color:#e6edf3;
+    class S1,S2,S3,S4,S5,S6,S7,S8,S9 step;
+    class S10 out;
+    </div>
+    <p class="caption">기존 메시지 컨버터를 <code>clear()</code>한 뒤 다시 등록하는 점, <code>BufferingClientHttpRequestFactory</code>로 body 다중 읽기를 가능하게 만드는 점이 핵심 빌드 결정입니다.</p>
+  </section>
+
+</div>
+
+<footer>
+  생성: 2026-05-15 — 화면 5 컨텍스트 라이프사이클 · 6 charset 결정 · 7 gzip 매트릭스 · 8 캐시 키 매트릭스 · 9 로그 레벨 · 10 빌더 조립
+</footer>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      primaryColor: '#1f2a3a',
+      primaryTextColor: '#e6edf3',
+      primaryBorderColor: '#58a6ff',
+      lineColor: '#8b949e',
+      tertiaryColor: '#161b22'
+    },
+    flowchart: { useMaxWidth: true, htmlLabels: false, curve: 'basis' },
+    sequence: { useMaxWidth: true, mirrorActors: false }
+  });
+</script>
+
+</body>
+</html>

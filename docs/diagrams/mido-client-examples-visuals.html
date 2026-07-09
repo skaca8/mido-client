@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>mido-client 사용 예시 시각화</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --line: #2a313b;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --good: #56d364; --warn: #f0b72f; --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.55; }
+  header { margin-bottom: 28px; }
+  header h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.5px; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+  .grid { display: grid; grid-template-columns: 1fr; gap: 24px; }
+  @media (min-width: 1300px) { .grid { grid-template-columns: 1fr 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 22px 24px 18px; }
+  .card h2 { margin: 0 0 4px; font-size: 18px; color: var(--accent); }
+  .card .sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .mermaid { background: #0b0f14; border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px; overflow-x: auto; }
+  .caption { margin-top: 12px; font-size: 13px; color: var(--muted); }
+  footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+  code { background: #0b0f14; padding: 1px 5px; border-radius: 4px;
+    font-size: 12px; color: var(--good); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>mido-client — 사용 예시 시각화</h1>
+  <p>출처: <code>docs/03-examples.md</code> 4가지 시나리오 + 보너스 + 패턴 요약</p>
+</header>
+
+<div class="grid">
+
+  <!-- 예시 1. 인증 서비스 -->
+  <section class="card">
+    <h2>예시 1. 인증 서비스 (단일 엔드포인트)</h2>
+    <p class="sub">YAML 한 채널 + Bearer 토큰 + 헤더 → AuthService 호출 흐름</p>
+    <div class="mermaid">
+sequenceDiagram
+    autonumber
+    participant DEV as 개발자
+    participant YML as application.yml\n(auth 채널)
+    participant FAC as MidoClientFactory
+    participant CLI as RestClient (auth-first)
+    participant AUTH as auth.example.com
+
+    DEV->>YML: enabled=true,\nauth.first.url,\nbearer 토큰, X-API-Version 헤더
+    YML-->>FAC: 부팅 시 검증 + 바인딩
+    DEV->>FAC: getOrCreateClient("auth")
+    FAC-->>CLI: 캐시 미스 시 생성, 이후 재사용
+    DEV->>CLI: withDefaultChannelAction("validate", ...)
+    CLI->>AUTH: POST /auth/validate\nAuthorization: Bearer ...
+    AUTH-->>CLI: 200 TokenValidation
+    CLI-->>DEV: 반환
+    Note over CLI,AUTH: 모든 호출 로그에\nchannelAction = auth.validate 동반
+    </div>
+    <p class="caption">단일 엔드포인트 + Bearer + 정적 헤더 채널의 가장 기본 패턴. 인증/버전 헤더는 YAML에만 정의되고 코드에는 비즈니스 로직만 남습니다.</p>
+  </section>
+
+  <!-- 예시 2. 결제 듀얼 엔드포인트 -->
+  <section class="card">
+    <h2>예시 2. 결제 서비스 (듀얼 엔드포인트)</h2>
+    <p class="sub">조회/처리가 다른 호스트·타임아웃·로그 정책을 갖는 한 채널</p>
+    <div class="mermaid">
+flowchart TB
+    SVC["PaymentService\nextends BaseExternalApi"]
+
+    subgraph CH["YAML 채널: payment"]
+        direction TB
+        F["first (조회)\nurl: api.payment.com\nread-timeout: 30s\nlog: console\ntoken: QUERY"]
+        S["second (처리)\nurl: process.payment.com\nread-timeout: 120s\nlog: all\ntoken: PROCESS"]
+    end
+
+    QC["RestClient query\n캐시키 payment-first"]
+    PC["RestClient process\n캐시키 payment-second"]
+
+    GS["getStatus(id)\nGET /payments/id/status"]
+    PR["process(req)\nPOST /payments/process"]
+
+    SVC -->|"factory.getOrCreateClient('payment')"| QC
+    SVC -->|"factory.getOrCreateClient('payment', SECOND)"| PC
+    F -.->|"설정 주입"| QC
+    S -.->|"설정 주입"| PC
+    SVC --> GS --> QC
+    SVC --> PR --> PC
+
+    classDef cfg fill:#2b261a,stroke:#f0b72f,color:#e6edf3;
+    classDef cli fill:#1d2b1f,stroke:#56d364,color:#e6edf3;
+    classDef svc fill:#1f2a3a,stroke:#58a6ff,color:#e6edf3;
+    classDef op fill:#2a1d2b,stroke:#d2a8ff,color:#e6edf3;
+    class F,S cfg;
+    class QC,PC cli;
+    class SVC svc;
+    class GS,PR op;
+    </div>
+    <p class="caption">한 채널 안에서 조회용/처리용 RestClient가 각각 다른 정책으로 캐시되어 재사용됩니다. 사용자는 두 클라이언트를 골라 쓰기만 하면 됩니다.</p>
+  </section>
+
+  <!-- 예시 3. 알림 (log: off) -->
+  <section class="card">
+    <h2>예시 3. 알림 서비스 (민감 호출, log: off)</h2>
+    <p class="sub">Slack 웹훅 URL이 로그에 남지 않도록 채널 단위로 로깅 비활성</p>
+    <div class="mermaid">
+flowchart TB
+    SVC["NotificationService"]
+    YML["channels.notification.first\nurl: hooks.slack.com/.../WEBHOOK\nlog: off"]
+    CLI["RestClient (notification-first)"]
+    SLACK["Slack Webhook"]
+    LOGFILE["콘솔 + MidoClientFileLog"]
+
+    SVC -->|"sendSlack(text)"| CLI
+    YML -.->|"log: off 적용"| CLI
+    CLI -->|"POST '' (URL 전체 = webhook)"| SLACK
+    CLI -.->|"❌ 로그 안 남김"| LOGFILE
+
+    subgraph OTHER["다른 채널 (auth, payment) 영향 없음"]
+        direction TB
+        OK1["auth.first.log: console (정상)"]
+        OK2["payment.second.log: all (정상)"]
+    end
+
+    classDef off fill:#2b1f1f,stroke:#f85149,color:#e6edf3;
+    classDef on fill:#1d2b1f,stroke:#56d364,color:#e6edf3;
+    classDef neu fill:#1f2a3a,stroke:#58a6ff,color:#e6edf3;
+    class LOGFILE off;
+    class OK1,OK2 on;
+    class SVC,YML,CLI,SLACK neu;
+    </div>
+    <p class="caption">로깅 정책은 채널·엔드포인트 단위로 독립적입니다. 민감 호출만 끄고 다른 채널은 그대로 유지할 수 있습니다.</p>
+  </section>
+
+  <!-- 예시 4. 대용량 (gzip + 커스텀 인터셉터) -->
+  <section class="card">
+    <h2>예시 4. 대용량 통신 (Gzip + 커스텀 인터셉터)</h2>
+    <p class="sub">네트워크는 압축, 로그는 평문, 응답에는 압축 폭탄 방어 캡</p>
+    <div class="mermaid">
+sequenceDiagram
+    autonumber
+    participant SVC as BulkSyncService
+    participant RID as RequestIdInterceptor\n(커스텀)
+    participant LOG as MidoLoggingInterceptor
+    participant GREQ as MidoGzipRequest
+    participant GRES as MidoGzipResponse
+    participant SRV as bulk.internal
+
+    SVC->>RID: push(records) 평문 JSON
+    RID->>LOG: + X-Request-Id 헤더
+    LOG->>GREQ: 평문 body 로깅
+    GREQ->>GRES: body >= 2048B 면 gzip 압축
+    GRES->>SRV: Accept-Encoding gzip + 전송
+
+    SRV-->>GRES: 응답 Content-Encoding gzip
+    GRES-->>LOG: 디컴프레션 (cap 50MB 검사)
+    LOG-->>RID: 평문 응답 로깅
+    RID-->>SVC: SyncResult 반환
+
+    Note over GRES: 50MB 초과 시\nIOException 즉시 발생\n메모리 = 버퍼 + cap
+    Note over LOG: 네트워크는 압축\n로그는 평문
+    </div>
+    <p class="caption">인터셉터 등록 순서(커스텀→로깅→gzip)가 그대로 호출 순서이며, 응답 경로에서는 디컴프레션이 먼저 일어나 로깅이 평문을 봅니다.</p>
+  </section>
+
+  <!-- 보너스. 공개 API -->
+  <section class="card">
+    <h2>보너스. 공개 API 통합 (JSONPlaceholder)</h2>
+    <p class="sub">인증 없는 공개 API에도 동일 패턴이 그대로 적용됨</p>
+    <div class="mermaid">
+flowchart LR
+    YML["channels.jsonplaceholder.first\nurl: jsonplaceholder.typicode.com\nlog: console"]
+    SVC["JsonPlaceholderService"]
+    CLI["RestClient (jsonplaceholder-first)"]
+    API["jsonplaceholder.typicode.com"]
+
+    YML -.-> CLI
+    SVC -->|"getPost / createPost / updatePost / deletePost"| CLI
+    CLI -->|"GET POST PUT DELETE"| API
+
+    subgraph TEST["@SpringBootTest 실제 호출"]
+        direction TB
+        T1["shouldGetPost"]
+        T2["shouldCreatePost"]
+        T3["shouldUpdatePost"]
+        T4["shouldDeletePost"]
+    end
+    SVC -.-> T1
+    SVC -.-> T2
+    SVC -.-> T3
+    SVC -.-> T4
+
+    classDef neu fill:#1f2a3a,stroke:#58a6ff,color:#e6edf3;
+    classDef test fill:#1d2b1f,stroke:#56d364,color:#e6edf3;
+    class YML,SVC,CLI,API neu;
+    class T1,T2,T3,T4 test;
+    </div>
+    <p class="caption">통합 테스트가 외부 공개 API와 동일 패턴으로 실제 호출까지 검증합니다. 라이브러리 자동 구성 동작의 살아있는 증거입니다.</p>
+  </section>
+
+  <!-- 패턴 요약 매트릭스 -->
+  <section class="card">
+    <h2>패턴 요약 — 시나리오 × 설정 키워드</h2>
+    <p class="sub">어떤 상황에 어떤 YAML 키가 동원되는가</p>
+    <div class="mermaid">
+flowchart TB
+    subgraph SC["시나리오"]
+        direction TB
+        SC1["단일 엔드포인트 인증 API"]
+        SC2["조회/처리 분리 (듀얼)"]
+        SC3["민감 호출 (웹훅)"]
+        SC4["대용량 내부 통신"]
+        SC5["공통 헤더 (요청 ID)"]
+    end
+
+    subgraph KW["핵심 설정 키"]
+        direction TB
+        K1["authorization.type bearer\n+ headers"]
+        K2["first + second"]
+        K3["log: off"]
+        K4["gzip.request / response\n+ max-decompressed-size"]
+        K5["interceptors: [FQCN]"]
+    end
+
+    subgraph CODE["코드 패턴"]
+        direction TB
+        P1["getOrCreateClient(name)"]
+        P2["getOrCreateClient(name, SECOND)"]
+        P3["동일 패턴, 로깅만 off"]
+        P4["코드 변경 0줄"]
+        P5["호출부 코드에 흔적 없음"]
+    end
+
+    SC1 --> K1 --> P1
+    SC2 --> K2 --> P2
+    SC3 --> K3 --> P3
+    SC4 --> K4 --> P4
+    SC5 --> K5 --> P5
+
+    classDef sc fill:#2a1d2b,stroke:#d2a8ff,color:#e6edf3;
+    classDef kw fill:#2b261a,stroke:#f0b72f,color:#e6edf3;
+    classDef cd fill:#1d2b1f,stroke:#56d364,color:#e6edf3;
+    class SC1,SC2,SC3,SC4,SC5 sc;
+    class K1,K2,K3,K4,K5 kw;
+    class P1,P2,P3,P4,P5 cd;
+    </div>
+    <p class="caption">대부분의 운영 변경이 YAML 키 1~2개 토글로 끝나고, 코드 패턴은 거의 그대로 유지된다는 점이 이 매트릭스의 핵심.</p>
+  </section>
+
+</div>
+
+<footer>
+  생성: 2026-05-15 — 예시 1 인증 · 2 결제 듀얼 · 3 알림(log: off) · 4 대용량 gzip · 보너스 · 패턴 요약
+</footer>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      primaryColor: '#1f2a3a',
+      primaryTextColor: '#e6edf3',
+      primaryBorderColor: '#58a6ff',
+      lineColor: '#8b949e',
+      tertiaryColor: '#161b22'
+    },
+    flowchart: { useMaxWidth: true, htmlLabels: false, curve: 'basis' },
+    sequence: { useMaxWidth: true, mirrorActors: false }
+  });
+</script>
+
+</body>
+</html>
