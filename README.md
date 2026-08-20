@@ -36,7 +36,7 @@ factory classes, no repeated setup code.
 - **Per-channel content type** — pick `json` (default) or `xml` per channel; the request `Content-Type` header is set automatically
 - **Fail-fast configuration validation** — `@Validated` Bean Validation rejects malformed YAML at startup with a `BindValidationException` indicating the offending field
 - **ChannelContext with MDC** — scoped (`ScopedValue`) channel action tracking, integrated with SLF4J MDC for
-  distributed log tracing
+  distributed log tracing; bind it declaratively with `@ChannelName` + `@ChannelAction` (optional, needs an AOP runtime)
 - **Zero-code Auto-Configuration** — activated with a single `mido-client.enabled: true` property
 
 ## Requirements
@@ -473,6 +473,66 @@ The action key `channelAction` is available in log patterns:
 <!-- logback.xml -->
 <pattern>%d [%X{channelAction}] %-5level %msg%n</pattern>
 ```
+
+#### Declarative binding: `@ChannelName` + `@ChannelAction`
+
+Wrapping every call in a lambda gets repetitive, and forgetting one is invisible — the log line just says `channelAction: unknown`. The annotations remove the repetition:
+
+```java
+@Service
+@ChannelName("payment")                  // class = channel (the external system)
+public class PaymentAdapter {
+
+    private final RestClient client;
+
+    public PaymentAdapter(MidoClientFactory factory) {
+        this.client = factory.getOrCreateClient("payment");
+    }
+
+    @ChannelAction                        // -> "payment.getStatus"
+    public PaymentStatus getStatus(String id) {
+        return client.get().uri("/payments/{id}/status", id).retrieve().body(PaymentStatus.class);
+    }
+
+    @ChannelAction("processPayment")      // -> "payment.processPayment"
+    public PaymentResult process(PaymentRequest request) {
+        return client.post().uri("/payments/process").body(request).retrieve().body(PaymentResult.class);
+    }
+}
+```
+
+The two axes are split on purpose: the channel is a property of the class (*which* external system), the action a property of the method (*what* call). One annotation carrying both would let the channel vary per method and break the "one class = one channel" invariant. A class that genuinely talks to two channels should be split in two — there is no method-level channel override.
+
+**Requires an AOP runtime you provide.** mido-client declares aspectjweaver as `compileOnly`, so add `spring-boot-starter-aop` (Boot 3) to your application to activate the aspect. Without it the annotations are inert and nothing else changes.
+
+```gradle
+implementation 'org.springframework.boot:spring-boot-starter-aop'
+```
+
+**A missing `@ChannelName` fails loudly.** `@ChannelAction` on a class without `@ChannelName` throws `IllegalStateException` naming the class and method, rather than silently falling back to `unknown`. The failure surfaces on first call, not at startup — the aspect cannot know about beans it has not been invoked on.
+
+⚠️ **Proxy-based, with the usual limits.** The advice runs only on external calls through the Spring proxy. It does **not** apply to:
+
+- a call from another method of the same bean (self-invocation)
+- `private` or `final` methods
+- objects that are not Spring beans
+
+In those cases the action is simply not bound and the log shows `unknown`. **The annotation being present is not proof that it took effect** — this is the one way the declarative form is worse than the lambda, where a missing wrapper is visible in the code. For paths where it matters, keep using `ChannelContext.callWithChannelAction(...)` or `BaseExternalApi`.
+
+Nesting is safe: `ChannelContext` saves and restores the previous MDC value, so an annotated method called inside another bound action correctly exposes the outer action again once it returns.
+
+The aspect runs at `Ordered.HIGHEST_PRECEDENCE + 100`, outside `@Transactional`, so the action stays bound through transaction commit. Define your own `ChannelActionAspect` bean to replace it.
+
+#### Which one should I use?
+
+| | `@ChannelAction` | `BaseExternalApi` / `ChannelContext` |
+|---|---|---|
+| Boilerplate | None | A lambda per call |
+| Needs `spring-boot-starter-aop` | Yes | No |
+| Works on self-invocation, `private`/`final`, non-beans | No | Yes |
+| Missing binding is visible in code | No | Yes |
+
+Both are supported and interoperate; `BaseExternalApi` is not deprecated. Use the annotations for straightforward adapter beans, and the explicit form where proxying does not reach or where you want the binding visible at the call site.
 
 ## Logging
 

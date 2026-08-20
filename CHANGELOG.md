@@ -5,6 +5,34 @@ All notable changes to `mido-client` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Declarative `ChannelContext` binding via `@ChannelName` + `@ChannelAction`.** Annotate the class
+  with the channel it talks to and the methods with the action, instead of wrapping every call in
+  `withDefaultChannelAction("...", () -> ...)`. The action key is unchanged
+  (`"<channel>.<action>"`); `@ChannelAction` with no value uses the method name.
+
+  The two axes are separate annotations on purpose: the channel belongs to the class (which external
+  system), the action to the method (which call). A single annotation carrying both would let the
+  channel vary per method and break the "one class = one channel" invariant, so there is no
+  method-level channel override — split the class instead.
+
+  **aspectjweaver is not a new dependency.** It is declared `compileOnly`, and the aspect is
+  registered behind `@ConditionalOnClass("org.aspectj.weaver.Advice")`. A consumer that adds
+  `spring-boot-starter-aop` gets the annotations; one that does not sees them as inert and everything
+  else behaves identically. Define your own `ChannelActionAspect` bean to replace the default.
+
+  Known limits, documented rather than papered over: the advice is proxy-based, so it does not apply
+  to self-invocation, `private`/`final` methods, or non-beans — the annotation being present is not
+  proof that it took effect. That is the one way the declarative form is worse than the lambda, where
+  a missing wrapper is visible in the code. `@ChannelAction` on a class without `@ChannelName` throws
+  `IllegalStateException` naming the class and method rather than silently logging `unknown`.
+
+  `BaseExternalApi` is **not** deprecated. It covers exactly the paths proxying cannot reach, and the
+  README documents when to pick which.
+
 ## [3.0.0] - 2026-08-20
 
 ### ⚠️ Breaking Changes

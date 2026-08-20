@@ -28,6 +28,10 @@ dependencies {
     // Validation
     implementation 'org.springframework.boot:spring-boot-starter-validation'
 
+    // AspectJ — @ChannelAction 애스펙트 컴파일용. 소비 측에 강제하지 않으려고 compileOnly로 둔다.
+    // 런타임에 없으면 @ConditionalOnClass가 애스펙트 등록을 건너뛰고 애노테이션은 무동작이 된다.
+    compileOnly 'org.aspectj:aspectjweaver'
+
     // Lombok
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
@@ -37,6 +41,8 @@ dependencies {
 
     // Test
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    // 애스펙트를 실제로 프록시까지 태워서 검증하기 위해 테스트에서만 AOP 런타임을 넣는다.
+    testImplementation 'org.springframework.boot:spring-boot-starter-aop'
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 

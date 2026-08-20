@@ -33,7 +33,7 @@
 - **채널별 gzip 압축** — 요청 바디는 `min-size` 임계값 이상일 때만 압축, 응답은 자동 해제 + 압축 폭탄 방어 cap(`max-decompressed-size`)
 - **채널별 컨텐트 타입** — `json`(기본) / `xml` 중 채널 단위로 선택, 요청 `Content-Type` 헤더가 자동 설정됨
 - **부팅 시 설정 검증** — `@Validated` Bean Validation으로 잘못된 YAML을 시작 시점에 거부, `BindValidationException`에 어떤 필드가 잘못되었는지 명시
-- **ChannelContext + MDC 연동** — 스코프 기반(`ScopedValue`) 채널 액션 추적, SLF4J MDC와 통합되어 로그에 자동 포함
+- **ChannelContext + MDC 연동** — 스코프 기반(`ScopedValue`) 채널 액션 추적, SLF4J MDC와 통합되어 로그에 자동 포함. `@ChannelName` + `@ChannelAction`으로 선언적 바인딩 가능(선택, AOP 런타임 필요)
 - **자동 설정** — `mido-client.enabled: true` 프로퍼티 하나로 활성화
 
 ## 요구 사항
@@ -463,6 +463,66 @@ String status = ChannelContext.callWithChannelAction("payment.processPayment", (
 <!-- logback.xml -->
 <pattern>%d [%X{channelAction}] %-5level %msg%n</pattern>
 ```
+
+#### 선언적 바인딩: `@ChannelName` + `@ChannelAction`
+
+호출마다 람다로 감싸는 건 반복적이고, 하나 빠뜨리면 눈에 보이지 않습니다 — 로그에 `channelAction: unknown`만 찍힙니다. 애노테이션으로 반복을 없앱니다.
+
+```java
+@Service
+@ChannelName("payment")                  // 클래스 = 채널 (어느 외부 시스템)
+public class PaymentAdapter {
+
+    private final RestClient client;
+
+    public PaymentAdapter(MidoClientFactory factory) {
+        this.client = factory.getOrCreateClient("payment");
+    }
+
+    @ChannelAction                        // -> "payment.getStatus"
+    public PaymentStatus getStatus(String id) {
+        return client.get().uri("/payments/{id}/status", id).retrieve().body(PaymentStatus.class);
+    }
+
+    @ChannelAction("processPayment")      // -> "payment.processPayment"
+    public PaymentResult process(PaymentRequest request) {
+        return client.post().uri("/payments/process").body(request).retrieve().body(PaymentResult.class);
+    }
+}
+```
+
+두 축을 분리한 것은 의도적입니다. 채널은 클래스의 속성(*어느* 외부 시스템)이고 액션은 메서드의 속성(*무슨* 호출)입니다. 애노테이션 하나가 둘을 겸하면 메서드마다 채널이 갈릴 수 있어 "클래스 = 채널" 불변식이 깨집니다. 진짜 채널 2개를 쓰는 클래스는 둘로 쪼개세요 — 메서드 레벨 채널 오버라이드는 제공하지 않습니다.
+
+**AOP 런타임은 소비 측이 넣어야 합니다.** mido-client는 aspectjweaver를 `compileOnly`로 두므로, 애플리케이션에 `spring-boot-starter-aop`(Boot 3)를 추가해야 애스펙트가 활성화됩니다. 없으면 애노테이션은 무동작이고 나머지는 그대로입니다.
+
+```gradle
+implementation 'org.springframework.boot:spring-boot-starter-aop'
+```
+
+**`@ChannelName` 누락은 시끄럽게 실패합니다.** `@ChannelName` 없는 클래스에 `@ChannelAction`을 붙이면 클래스명과 메서드명을 담은 `IllegalStateException`이 납니다 — 조용히 `unknown`으로 흘러가지 않습니다. 다만 기동 시점이 아니라 첫 호출에서 드러납니다. 애스펙트는 자신이 호출되지 않은 빈을 알 수 없습니다.
+
+⚠️ **프록시 기반이라 알려진 한계가 있습니다.** 어드바이스는 Spring 프록시를 통한 외부 호출에서만 동작합니다. 다음에는 **적용되지 않습니다.**
+
+- 같은 빈의 다른 메서드에서 호출 (self-invocation)
+- `private` 또는 `final` 메서드
+- Spring 빈이 아닌 객체
+
+이 경우 액션이 바인딩되지 않고 로그에 `unknown`이 찍힙니다. **애노테이션이 붙어 있다는 게 적용되었다는 증거가 아닙니다** — 선언적 방식이 람다보다 나쁜 유일한 지점입니다. 람다는 빠뜨리면 코드에서 보입니다. 중요한 경로에는 `ChannelContext.callWithChannelAction(...)`이나 `BaseExternalApi`를 계속 쓰세요.
+
+중첩은 안전합니다. `ChannelContext`가 이전 MDC 값을 저장·복원하므로, 이미 바인딩된 액션 안에서 애노테이션 메서드를 호출해도 반환 후 바깥 액션이 정상 복원됩니다.
+
+애스펙트는 `Ordered.HIGHEST_PRECEDENCE + 100`으로 `@Transactional` 바깥에서 동작하므로 트랜잭션 커밋까지 액션이 유지됩니다. 직접 `ChannelActionAspect` 빈을 정의하면 교체됩니다.
+
+#### 어느 쪽을 쓸까
+
+| | `@ChannelAction` | `BaseExternalApi` / `ChannelContext` |
+|---|---|---|
+| 보일러플레이트 | 없음 | 호출당 람다 하나 |
+| `spring-boot-starter-aop` 필요 | 필요 | 불필요 |
+| self-invocation, `private`/`final`, 비빈에서 동작 | 안 됨 | 됨 |
+| 바인딩 누락이 코드에서 보이는지 | 안 보임 | 보임 |
+
+둘 다 지원되며 함께 쓸 수 있습니다. `BaseExternalApi`는 deprecated가 아닙니다. 평범한 어댑터 빈에는 애노테이션을, 프록시가 닿지 않는 곳이나 호출 지점에서 바인딩을 명시하고 싶은 곳에는 명시적 방식을 쓰세요.
 
 ## 로깅
 
