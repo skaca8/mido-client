@@ -29,7 +29,7 @@
 - **엔드포인트별 인증** — Bearer, Basic, API Key 방식 지원
 - **스마트 인코딩 감지** — Content-Type 헤더 → UTF-8 유효성 검사 → 채널 기본값 순으로 자동 결정
 - **커스텀 인터셉터** — `ClientHttpRequestInterceptor` 구현체를 YAML에 클래스명으로 등록
-- **교체 가능한 HTTP 전송** — `simple`(기본, `HttpURLConnection`) / `jdk`(`java.net.http.HttpClient`, 채널별 커넥션 풀 + HTTP/2) 중 전역 또는 엔드포인트 단위로 선택
+- **채널별 커넥션 격리** — 채널/엔드포인트마다 독립된 `java.net.http.HttpClient`를 가지므로 포화된 채널이 다른 채널을 굶기지 않음, HTTP/2 지원
 - **채널별 gzip 압축** — 요청 바디는 `min-size` 임계값 이상일 때만 압축, 응답은 자동 해제 + 압축 폭탄 방어 cap(`max-decompressed-size`)
 - **채널별 컨텐트 타입** — `json`(기본) / `xml` 중 채널 단위로 선택, 요청 `Content-Type` 헤더가 자동 설정됨
 - **부팅 시 설정 검증** — `@Validated` Bean Validation으로 잘못된 YAML을 시작 시점에 거부, `BindValidationException`에 어떤 필드가 잘못되었는지 명시
@@ -62,7 +62,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:2.0.1'
+    implementation 'com.github.skaca8:mido-client:3.0.0'
 }
 ```
 
@@ -80,18 +80,18 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>2.0.1</version>
+    <version>3.0.0</version>
 </dependency>
 ```
 
-> 특정 릴리즈를 사용하려면 `2.0.1`을 원하는 태그 또는 커밋 해시로 변경하세요.
+> 특정 릴리즈를 사용하려면 `3.0.0`을 원하는 태그 또는 커밋 해시로 변경하세요.
 
 #### Maven Central을 통한 방법 (정식 릴리즈)
 
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:2.0.1'
+implementation 'io.github.skaca8:mido-client:3.0.0'
 ```
 
 **Maven**
@@ -101,7 +101,7 @@ implementation 'io.github.skaca8:mido-client:2.0.1'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>2.0.1</version>
+    <version>3.0.0</version>
 </dependency>
 ```
 
@@ -203,7 +203,8 @@ public class PaymentService extends BaseExternalApi {
 | `read-timeout-seconds`    | Long           | `60`      | 읽기 타임아웃 (초)                                    |
 | `connect-timeout-seconds` | Long           | `3`       | 연결 타임아웃 (초)                                    |
 | `log`                     | LogLevel       | `console` | `off` / `console` / `file` / `all`             |
-| `client-type`             | ClientType     | (전역값 상속)  | `simple` / `jdk` — 이 엔드포인트의 HTTP 전송, `mido-client.client-type`를 오버라이드 |
+| `log-body`                | Boolean        | `true`    | 로그에 요청·응답 body 포함 여부. PII·카드·토큰이 흐르는 엔드포인트는 `false` |
+| `log-max-body-bytes`      | Integer        | `8192`    | 로그 라인당 body 최대 바이트, 초과분은 `...(truncated N bytes)`. `0`은 무제한 |
 | `authorization.type`      | TokenType      | -         | `bearer` / `basic` / `api_key`                 |
 | `authorization.token`     | String         | -         | 인증 토큰 값                                        |
 | `headers`                 | List           | -         | 모든 요청에 고정으로 추가할 헤더 목록                          |
@@ -218,7 +219,6 @@ public class PaymentService extends BaseExternalApi {
 | 프로퍼티                      | 타입         | 기본값      | 설명                                          |
 |---------------------------|------------|----------|---------------------------------------------|
 | `mido-client.enabled`     | Boolean    | `false`  | 라이브러리 활성화 여부                                 |
-| `mido-client.client-type` | ClientType | `simple` | 모든 채널의 기본 HTTP 전송, 엔드포인트별 `client-type`로 오버라이드 가능 |
 
 ### 설정 검증
 
@@ -231,6 +231,13 @@ public class PaymentService extends BaseExternalApi {
 - `headers[].name` 또는 `headers[].value`가 비어있음
 - 채널에 필수 `primary` 엔드포인트가 없음
 - `type`이 명시적으로 `null`로 지정됨 (값은 `json` 또는 `xml`이어야 함 — 그 외 값은 Spring enum 바인더가 시작 시점에 별도로 거부)
+
+빈 검증 외에, `MidoClientFactory` 빈이 기동 시점에 다음을 확인합니다. 오타가 첫 요청까지 숨어 있지 않습니다.
+
+- `charset`이 알 수 없는 문자셋 → `Invalid charset '<name>' for channel: <channel>`
+- `interceptors[]` 항목을 로드할 수 없거나, `ClientHttpRequestInterceptor` 미구현이거나, public 무인자 생성자가 없음 → 메시지에 채널명과 엔드포인트가 함께 표시됨
+
+이 검사에서 인터셉터 클래스는 로드·검사만 하고 **인스턴스는 만들지 않습니다.** 부수효과가 있는 생성자가 두 번 실행되지 않습니다.
 
 ## 고급 사용법
 
@@ -380,7 +387,7 @@ mido-client:
 **동작**:
 
 - `type: json` (기본값) — 모든 요청에 `Content-Type: application/json` 헤더가 자동 추가되고, POJO 바디는 Jackson으로 직렬화됩니다.
-- `type: xml` — 모든 요청에 `Content-Type: application/xml` 헤더가 자동 추가됩니다. 바디는 직렬화된 XML `String`으로 전달하세요 (Jackson XML 마샬링은 기본 번들에 포함되어 있지 않습니다 — POJO ↔ XML 변환이 필요하면 `interceptors`로 직접 컨버터를 등록하세요).
+- `type: xml` — 모든 요청에 `Content-Type: application/xml` 헤더가 자동 추가됩니다. 직렬화된 XML `String` 바디는 항상 동작합니다. POJO ↔ XML은 클래스패스에 따릅니다 — `mido-client`는 `RestClient` 기본 컨버터 목록을 유지하므로(채널 `charset` 적용을 위해 `String` 컨버터만 교체합니다) 애플리케이션에 `jackson-dataformat-xml`을 추가하면 `MappingJackson2XmlHttpMessageConverter`가 활성화됩니다. `mido-client`의 의존성은 아닙니다.
 
 ### Gzip 압축
 
@@ -401,38 +408,37 @@ mido-client:
 
 **동작**:
 
-- `request: true` — 바디 크기가 `min-size` 이상이면 gzip 압축 후 전송, `Content-Encoding: gzip` 헤더 자동 추가.
+- `request: true` — 바디 크기가 `min-size` 이상이면 gzip 압축 후 전송, `Content-Encoding: gzip` 헤더 추가와 함께 `Content-Length`를 압축 후 길이로 갱신합니다. 빈 바디는 `min-size: 0`이어도 압축하지 않으므로 바디 없는 `GET`에 gzip 헤더가 붙지 않습니다.
 - `response: true` — 요청에 `Accept-Encoding: gzip`을 박고, 서버가 `Content-Encoding: gzip`으로 응답하면 메시지 컨버터가 보기 전에 투명하게 해제.
 - `max-decompressed-size`는 압축 폭탄(decompression bomb) 방어 — 해제 결과가 cap을 넘으면 즉시 `IOException`이 발생하며 메모리 사용량은 버퍼 + cap 수준으로 제한됩니다.
 
-인터셉터 등록 순서가 보존되어 로깅에는 항상 평문 바디가 찍히고, 네트워크에는 압축된 바이트가 흘러갑니다.
+인터셉터 등록 순서가 보존되어 로깅에는 항상 평문 바디가 찍히고, 네트워크에는 압축된 바이트가 흘러갑니다. 전체 체인은 다음과 같습니다.
 
-### HTTP 전송 방식 (`simple` / `jdk`)
-
-하부 request factory를 전역 또는 엔드포인트 단위로 선택합니다. 기본값은 `simple`이라 기존 설정의 동작은 그대로 유지됩니다.
-
-```yaml
-mido-client:
-  enabled: true
-  client-type: jdk               # 모든 채널의 전역 기본값
-  channels:
-    payment:
-      primary:
-        url: https://api.payment.com
-        # 전역값 상속 -> jdk
-      secondary:
-        url: https://process.payment.com
-        client-type: simple      # 이 엔드포인트만 오버라이드
+```
+커스텀 인터셉터  →  mido 로깅  →  mido gzip  →  전송
 ```
 
-| 값        | 하부 factory                      | 커넥션 재사용                             | HTTP/2 |
-|----------|----------------------------------|-------------------------------------|--------|
-| `simple` | `SimpleClientHttpRequestFactory` | JVM 전역 `HttpURLConnection` keep-alive | 미지원    |
-| `jdk`    | `JdkClientHttpRequestFactory`    | 채널별 `HttpClient` 커넥션 풀               | 지원     |
+⚠️ **커스텀 인터셉터가 최외곽이라 요청 body를 압축 *전* 원문으로 봅니다.** body에 서명·해시를 만드는 인터셉터(HMAC, 체크섬, content-digest 헤더)는 평문 기준으로 계산하는데 서버는 gzip된 바이트를 받으므로 검증이 깨집니다. `gzip.request: true`인 채널에서는 인터셉터 안에서 직접 압축한 바이트로 서명하거나, 해당 채널의 요청 압축을 끄세요.
 
-**`jdk`를 선택하는 이유**: `simple` 클라이언트는 JVM 전역 keep-alive 캐시로 커넥션을 재사용하므로 모든 채널이 사실상 하나의 풀을 공유합니다. `jdk`는 채널/엔드포인트마다 독립된 `HttpClient`(= 독립 커넥션 풀)를 주므로, 이 라이브러리가 지향하는 채널별 커넥션 격리를 실제로 구현합니다. 고throughput 채널이나 HTTP/2가 필요한 경우 권장합니다.
+### HTTP 전송
 
-**동작 참고**: `jdk` 전송은 리다이렉트를 따르며(`Redirect.NORMAL` — HTTPS→HTTP 다운그레이드는 거부), `connect-timeout-seconds` / `read-timeout-seconds`를 동일하게 적용합니다. `simple`과 달리 JDK `HttpClient`는 명시적으로 설정하지 않는 한 JVM 기본 프록시 셀렉터를 사용하지 않습니다. 로깅/gzip 인터셉터 동작은 두 전송 모두 동일합니다.
+모든 채널은 `java.net.http.HttpClient` 기반의 `JdkClientHttpRequestFactory`를 사용합니다. 설정할 것은 없습니다 — 요점은 **채널/엔드포인트마다 독립된 `HttpClient`, 즉 독립 커넥션 풀을 갖는다**는 것입니다. 한 채널이 느려지거나 포화되어도 다른 채널의 커넥션을 잡아먹지 않습니다. 이 격리가 이 라이브러리의 존재 이유입니다.
+
+| 항목            | 값                                                        |
+|---------------|----------------------------------------------------------|
+| Request factory | `JdkClientHttpRequestFactory`                            |
+| 커넥션 풀         | 채널/엔드포인트당 1개                                             |
+| HTTP/2        | 지원 (협상, HTTP/1.1 폴백)                                     |
+| 리다이렉트        | 따라감 (`Redirect.NORMAL` — HTTPS→HTTP 다운그레이드 거부)           |
+| 프록시           | `http.proxyHost` / `https.proxyHost` 시스템 프로퍼티를 따름 — mido-client는 `HttpClient.Builder.proxy()`를 호출하지 않고, 호출하지 않은 빌더는 `ProxySelector.getDefault()`를 쓴다고 문서화되어 있음 |
+
+**`read-timeout-seconds`는 소켓 유휴 타임아웃이 아니라 교환 전체 데드라인입니다.** 요청 전송부터 응답 body 소진까지를 덮고 `HttpTimeoutException`으로 만료됩니다. Spring은 이를 `HttpRequest.Builder#timeout` 대신 자체 `TimeoutHandler`로 구현하며([JDK-8258397](https://bugs.openjdk.org/browse/JDK-8258397) 우회), 타이머는 응답 body 스트림이 close될 때 취소됩니다. 따라서 패킷 간격이 아니라 **호출 전체 예상 시간** 기준으로 값을 잡으세요 — 느리지만 꾸준히 흘러오는 응답도 끊깁니다. `mido-client`는 로깅을 위해 응답 전문을 버퍼링하므로 애초에 스트리밍 다운로드용 클라이언트가 아닙니다.
+
+`connect-timeout-seconds`는 `HttpClient.Builder.connectTimeout`에 매핑되며 `HttpConnectTimeoutException`으로 따로 구분됩니다. [`FailureType`](#로깅)이 "서버에 도달하지 못함"과 "이미 전송되었을 수 있음"을 구분할 수 있는 근거입니다.
+
+⚠️ **응답은 스트리밍이 아니라 메모리에 버퍼링됩니다.** 로깅 인터셉터가 body를 재read해야 하므로 모든 전송이 `BufferingClientHttpRequestFactory`로 감싸져 있고, 따라서 `log` / `log-body` 설정과 무관하게 응답 전문이 `byte[]`로 힙에 올라갑니다. `log-max-body-bytes`는 **로그**로 나가는 양의 상한이지 **힙**의 상한이 아닙니다. 힙 크기 대비 유의미하게 큰 응답을 주는 엔드포인트에 채널을 붙이지 마세요 — 파일 다운로드용 클라이언트가 아닙니다.
+
+**라이프사이클**: 모든 클라이언트는 Spring 컨텍스트 종료 시 정리됩니다(`MidoClientFactory`가 `DisposableBean` 구현). `close()` 대신 `HttpClient.shutdown()`을 사용해 진행 중인 요청이 종료를 붙잡지 않게 합니다 — in-flight 교환이 끝나면 selector·풀 스레드가 종료됩니다.
 
 ### ChannelContext와 MDC
 
@@ -460,6 +466,8 @@ String status = ChannelContext.callWithChannelAction("payment.processPayment", (
 
 ## 로깅
 
+`log`은 **목적지**를 정하며, 심각도는 정하지 않습니다.
+
 | 레벨        | 콘솔 출력 | 파일 출력 (`MidoClientFileLog`) |
 |-----------|-------|-----------------------------|
 | `off`     | -     | -                           |
@@ -467,7 +475,58 @@ String status = ChannelContext.callWithChannelAction("payment.processPayment", (
 | `file`    | -     | Yes                         |
 | `all`     | Yes   | Yes                         |
 
+심각도는 호출 결과에 따라 결정됩니다. 로그 본문을 파싱하지 않고 레벨만으로 알림을 걸 수 있습니다.
+
+| 결과                        | 레벨      |
+|---------------------------|---------|
+| 요청 라인, 2xx / 3xx 응답       | `info`  |
+| 4xx 응답                    | `warn`  |
+| 5xx 응답                    | `error` |
+| 전송 실패 (응답 없음)             | `error` |
+
 각 로그 항목에는 채널 액션, HTTP 메서드, URL, 요청/응답 바디, 응답 시간, HTTP 상태코드가 포함됩니다.
+
+`log: file` 또는 `log: all`을 지정했는데 애플리케이션에 `MidoClientFileLog` 로거가 선언되어 있지 않으면 기동 시 경고가 나갑니다 — 그대로 두면 해당 로그가 조용히 root 로거로 흘러갑니다. 이 검사는 Logback에서만 동작하며, 다른 SLF4J 바인딩에서는 추측하지 않고 건너뜁니다.
+
+응답이 오기 전에 실패한 호출(connect/read 타임아웃, DNS, TLS)은 `[mido-client failure]` 라인으로 **error** 레벨에 별도 기록되며 소요시간, 실패 분류, 예외 타입·메시지를 담습니다. 스택트레이스는 여기서 반복하지 않습니다 — 예외는 호출측으로 그대로 전파됩니다.
+
+```
+[mido-client failure] channelAction: payment.pay, method: POST, url: https://api.payment.com/pay,
+elapsedMs: 3011, failureType: timeout, delivery: UNKNOWN, exception: java.net.SocketTimeoutException: Read timed out
+```
+
+`failureType` / `delivery`는 `FailureType.classify(Throwable)`의 결과이며, `cause` 체인을 직접 파헤치는 대신 이 메서드를 호출하면 됩니다. mido-client는 Spring·JDK가 던지는 예외를 **감싸거나 대체하지 않습니다.** 기존 예외 처리와 Resilience4j 예외 판정이 그대로 동작합니다.
+
+```java
+catch (RestClientException e) {
+    if (FailureType.classify(e).getDelivery() == FailureType.Delivery.NOT_DELIVERED) {
+        retry();   // 서버에 도달하지 않았으므로 비멱등 요청도 재시도 가능
+    }
+}
+```
+
+| `failureType`                     | `delivery`      | 의미                        |
+|-----------------------------------|-----------------|---------------------------|
+| `dns`                             | `NOT_DELIVERED` | 호스트명 해석 실패                |
+| `tls`                             | `NOT_DELIVERED` | 핸드셰이크·인증서 실패              |
+| `connect`                         | `NOT_DELIVERED` | 연결 거부·도달 불가·connect 타임아웃  |
+| `timeout`                         | `UNKNOWN`       | 타임아웃, 전송 여부 판단 불가         |
+| `client-error` / `server-error`   | `DELIVERED`     | 서버가 4xx / 5xx로 응답         |
+| `unknown`                         | `UNKNOWN`       | 매칭되는 분류 없음                |
+
+connect 타임아웃은 `HttpConnectTimeoutException`으로 도착해 `connect`(미도달)로 분류되고, 응답 타임아웃은 `HttpTimeoutException`으로 도착해 `timeout`(도달 여부 불명)으로 남습니다 — 요청이 이미 전송되었을 수 있기 때문입니다.
+
+PII·카드·토큰이 흐르는 엔드포인트에서 바디를 로그에 남기지 않으려면 `log-body: false`를 지정합니다. 바디를 아예 읽지 않고(마스킹이 아니라 미수집) `body: (omitted)`로 표기되며, 상태코드·소요시간·채널 액션은 그대로 남습니다.
+
+```yaml
+mido-client:
+  channels:
+    payment:
+      primary:
+        url: https://api.payment.com
+        log: console
+        log-body: false        # 카드번호·토큰이 로그로 나가지 않는다
+```
 
 파일 로깅을 사용하려면 `logback.xml`에 `MidoClientFileLog` 로거를 추가합니다.
 

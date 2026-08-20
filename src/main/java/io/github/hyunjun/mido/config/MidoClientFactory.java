@@ -1,32 +1,40 @@
 package io.github.hyunjun.mido.config;
 
-import io.github.hyunjun.mido.constant.ClientType;
 import io.github.hyunjun.mido.constant.ContentType;
 import io.github.hyunjun.mido.constant.EndpointType;
 import io.github.hyunjun.mido.constant.LogLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.StringHttpMessageConverter;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.util.ClassUtils;
 import org.springframework.web.client.RestClient;
 
+import java.lang.ref.WeakReference;
 import java.net.http.HttpClient;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Stream;
 
 /**
  * Builds and caches {@link RestClient} instances per channel + endpoint configured under
@@ -54,11 +62,29 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @RequiredArgsConstructor
-public class MidoClientFactory {
+public class MidoClientFactory implements InitializingBean, DisposableBean {
+
+    private static final String MIDO_FILE_LOGGER_NAME = "MidoClientFileLog";
+
+    private static final String LOGBACK_LOGGER_CLASS = "ch.qos.logback.classic.Logger";
 
     private final MidoClientProperties midoClientProperties;
 
     private final Map<String, RestClient> clientCache = new ConcurrentHashMap<>();
+
+    /**
+     * Every {@link HttpClient} built so far — one per channel/endpoint, which is what gives each
+     * channel its own connection pool. The instances become unreachable once handed to
+     * {@code JdkClientHttpRequestFactory}, so they are tracked here to be shut down in
+     * {@link #destroy()}.
+     *
+     * <p>Tracked <strong>weakly</strong> on purpose. A cached client stays reachable through
+     * {@link #clientCache}, so it is still here to be shut down at context close. A one-off client
+     * built through {@link #baseRestClient} and then dropped by the caller must stay collectable —
+     * holding it strongly would pin its selector thread for the life of the JVM, which is worse than
+     * the leak this tracking exists to fix.
+     */
+    private final List<WeakReference<HttpClient>> httpClients = new CopyOnWriteArrayList<>();
 
     /**
      * Lower-level builder used internally and exposed for advanced cases where the caller already
@@ -75,7 +101,6 @@ public class MidoClientFactory {
      */
     public RestClient.Builder baseRestClient(String baseUrl, MidoClientProperties.EndpointConfig endpointConfig, Charset charset, ContentType contentType) {
         BufferingClientHttpRequestFactory requestFactory = createRequestFactory(
-                resolveClientType(endpointConfig),
                 endpointConfig.getConnectTimeoutSeconds(),
                 endpointConfig.getReadTimeoutSeconds()
         );
@@ -85,7 +110,13 @@ public class MidoClientFactory {
                 .requestFactory(requestFactory)
                 .messageConverters(converters -> configureMessageConverters(converters, charset))
                 .defaultHeaders(headers -> configureHeaders(headers, endpointConfig.getAuthorization(), endpointConfig.getHeaders(), contentType))
-                .requestInterceptors(interceptors -> interceptors.addAll(createInterceptors(endpointConfig.getInterceptors(), endpointConfig.getLog(), charset, endpointConfig.getGzip())));
+                .requestInterceptors(interceptors -> interceptors.addAll(createInterceptors(
+                        endpointConfig.getInterceptors(),
+                        endpointConfig.getLog(),
+                        charset,
+                        Boolean.TRUE.equals(endpointConfig.getLogBody()),
+                        endpointConfig.getLogMaxBodyBytes(),
+                        endpointConfig.getGzip())));
     }
 
     /**
@@ -108,6 +139,10 @@ public class MidoClientFactory {
      * access. If {@link EndpointType#SECONDARY} is requested but the channel has no secondary
      * configuration, the primary endpoint is used as a fallback.
      *
+     * <p>The fallback is applied <em>before</em> the cache lookup, so such a channel does not end up
+     * with two identically configured clients (and, on the {@code jdk} transport, two connection
+     * pools) under the {@code -primary} and {@code -secondary} keys.
+     *
      * @param channelName  YAML channel key (any casing)
      * @param endpointType {@link EndpointType#PRIMARY} or {@link EndpointType#SECONDARY}
      * @return the requested {@link RestClient}
@@ -115,8 +150,21 @@ public class MidoClientFactory {
      *                               custom interceptor cannot be instantiated
      */
     public RestClient getOrCreateClient(String channelName, EndpointType endpointType) {
-        String cacheKey = channelName.toLowerCase(Locale.ROOT) + "-" + endpointType.getValue();
-        return clientCache.computeIfAbsent(cacheKey, k -> createClient(channelName, endpointType));
+        EndpointType effectiveType = resolveEndpointType(channelName, endpointType);
+        String cacheKey = channelName.toLowerCase(Locale.ROOT) + "-" + effectiveType.getValue();
+        return clientCache.computeIfAbsent(cacheKey, k -> createClient(channelName, effectiveType));
+    }
+
+    private EndpointType resolveEndpointType(String channelName, EndpointType requested) {
+        if (requested != EndpointType.SECONDARY) return EndpointType.PRIMARY;
+
+        // secondary가 없으면 primary 설정으로 폴백되므로 캐시 키도 primary로 정규화한다.
+        // 알 수 없는 채널은 여기서 판단하지 않는다 — createClient가 채널명을 담은 예외로 보고한다.
+        MidoClientProperties.ChannelConfig channelConfig =
+                midoClientProperties.getChannels().get(channelName.toLowerCase(Locale.ROOT));
+        return channelConfig != null && channelConfig.getSecondary() != null
+                ? EndpointType.SECONDARY
+                : EndpointType.PRIMARY;
     }
 
     private RestClient createClient(String channelName, EndpointType endpointType) {
@@ -129,8 +177,7 @@ public class MidoClientFactory {
                 throw new IllegalArgumentException("URL is not configured for channel: " + channelName + ", type: " + configType);
             }
 
-            Charset charset = channelConfig.getCharset() != null ?
-                Charset.forName(channelConfig.getCharset()) : StandardCharsets.UTF_8;
+            Charset charset = resolveCharset(channelName, channelConfig.getCharset());
 
             return baseRestClient(
                     endpointConfig.getUrl(),
@@ -154,14 +201,14 @@ public class MidoClientFactory {
         throw new IllegalArgumentException("Unsupported EndpointType: " + endpointType);
     }
 
-    private List<ClientHttpRequestInterceptor> createInterceptors(List<String> interceptorClassNames, LogLevel logLevel, Charset charset, MidoClientProperties.Gzip gzip) {
+    private List<ClientHttpRequestInterceptor> createInterceptors(List<String> interceptorClassNames, LogLevel logLevel, Charset charset, boolean logBody, int maxBodyBytes, MidoClientProperties.Gzip gzip) {
         List<ClientHttpRequestInterceptor> interceptorList = new ArrayList<>();
 
         if (interceptorClassNames != null && !interceptorClassNames.isEmpty()) {
             addCustomInterceptors(interceptorList, interceptorClassNames);
         }
 
-        interceptorList.add(new MidoLoggingInterceptor(logLevel, charset));
+        interceptorList.add(new MidoLoggingInterceptor(logLevel, charset, logBody, maxBodyBytes));
 
         // gzip은 logging 뒤에 등록해야 로깅이 평문 body를 본다 (디버깅 가독성 우선)
         addGzipInterceptors(interceptorList, gzip);
@@ -188,7 +235,9 @@ public class MidoClientFactory {
     private ClientHttpRequestInterceptor createInterceptor(String className) {
         // 설정 실패는 운영 환경에서 silent skip 대신 fail-fast — 외부 catch에서 채널 이름이 함께 보고된다.
         try {
-            Class<?> interceptorClass = Class.forName(className);
+            // Class.forName(String)은 mido-client를 로드한 클래스로더를 쓴다 — devtools의 RestartClassLoader에
+            // 올라간 소비 측 인터셉터를 못 본다. 기본 클래스로더(TCCL 우선)로 조회해야 한다.
+            Class<?> interceptorClass = ClassUtils.forName(className, ClassUtils.getDefaultClassLoader());
             Object instance = interceptorClass.getDeclaredConstructor().newInstance();
             if (!(instance instanceof ClientHttpRequestInterceptor interceptor)) {
                 throw new IllegalStateException(
@@ -219,16 +268,22 @@ public class MidoClientFactory {
     }
 
     private void addCustomHeaders(HttpHeaders headers, List<MidoClientProperties.Header> customHeaders) {
-        if (customHeaders != null && !customHeaders.isEmpty()) {
-            customHeaders.forEach(header -> {
-                if (header.getName() != null && header.getValue() != null) {
-                    headers.add(header.getName(), header.getValue());
-                }
-            });
-        }
+        if (customHeaders == null || customHeaders.isEmpty()) return;
+
+        // 같은 이름의 첫 선언은 set(mido가 넣은 Accept/Content-Type/Authorization을 덮는다),
+        // 두 번째부터는 add(같은 이름을 의도적으로 여러 번 선언한 경우를 잃지 않는다).
+        Set<String> replaced = new HashSet<>();
+        customHeaders.forEach(header -> {
+            if (header.getName() == null || header.getValue() == null) return;
+            if (replaced.add(header.getName().toLowerCase(Locale.ROOT))) {
+                headers.set(header.getName(), header.getValue());
+            } else {
+                headers.add(header.getName(), header.getValue());
+            }
+        });
     }
 
-    private void configureMessageConverters(List<org.springframework.http.converter.HttpMessageConverter<?>> converters, Charset charset) {
+    private void configureMessageConverters(List<HttpMessageConverter<?>> converters, Charset charset) {
         StringHttpMessageConverter stringConverter = new StringHttpMessageConverter(charset);
         stringConverter.setWriteAcceptCharset(false);
 
@@ -242,47 +297,154 @@ public class MidoClientFactory {
                 MediaType.ALL
         ));
 
-        MappingJackson2HttpMessageConverter jacksonConverter = new MappingJackson2HttpMessageConverter();
-
-        converters.clear();
-        converters.add(stringConverter);
-        converters.add(jacksonConverter);
+        // 기본 String 컨버터만 교체한다. clear()로 전부 비우면 byte[]·Resource·form/multipart 지원까지 사라져
+        // 파일 업/다운로드가 불가능해진다. Jackson은 기본 목록에 이미 들어 있어 따로 넣지 않는다.
+        converters.removeIf(StringHttpMessageConverter.class::isInstance);
+        converters.add(0, stringConverter);
     }
 
     /**
-     * Effective transport for an endpoint: the endpoint's own {@code client-type} if set, otherwise
-     * the top-level {@code mido-client.client-type} (which itself defaults to {@link ClientType#SIMPLE}).
+     * Fails fast at startup on configuration that would otherwise only surface on the first request:
+     * an unknown {@code charset}, or an {@code interceptors:} entry that cannot be loaded, does not
+     * implement {@link ClientHttpRequestInterceptor}, or has no public no-arg constructor.
+     *
+     * <p>Interceptor classes are loaded and inspected but <strong>not instantiated</strong> — a
+     * constructor with side effects must not run twice.
+     *
+     * @throws IllegalStateException naming the channel, endpoint, and offending value
      */
-    ClientType resolveClientType(MidoClientProperties.EndpointConfig endpointConfig) {
-        return endpointConfig.getClientType() != null
-                ? endpointConfig.getClientType()
-                : midoClientProperties.getClientType();
+    @Override
+    public void afterPropertiesSet() {
+        midoClientProperties.getChannels().forEach((channelName, channelConfig) -> {
+            resolveCharset(channelName, channelConfig.getCharset());
+            validateInterceptors(channelName, EndpointType.PRIMARY.getValue(), channelConfig.getPrimary());
+            validateInterceptors(channelName, EndpointType.SECONDARY.getValue(), channelConfig.getSecondary());
+        });
+        warnWhenFileLoggerHasNoAppender();
     }
 
-    private BufferingClientHttpRequestFactory createRequestFactory(ClientType clientType, long connectTimeoutSeconds, long readTimeoutSeconds) {
-        ClientHttpRequestFactory factory = switch (clientType) {
-            case JDK -> createJdkRequestFactory(connectTimeoutSeconds, readTimeoutSeconds);
-            case SIMPLE -> createSimpleRequestFactory(connectTimeoutSeconds, readTimeoutSeconds);
-        };
+    /**
+     * Warns when an endpoint routes logs to {@code MidoClientFileLog} ({@code log: file} or
+     * {@code log: all}) but the host application never configured that logger — in which case the
+     * lines silently fall through to root instead of landing in the intended file.
+     *
+     * <p>The check only runs on Logback. On any other SLF4J binding the appender list is not
+     * introspectable through a portable API, so the warning is skipped rather than guessed at.
+     */
+    private void warnWhenFileLoggerHasNoAppender() {
+        boolean fileLoggingConfigured = midoClientProperties.getChannels().values().stream()
+                .flatMap(channel -> Stream.of(channel.getPrimary(), channel.getSecondary()))
+                .filter(Objects::nonNull)
+                .map(endpoint -> LogLevel.resolveEffectiveLogLevel(endpoint.getLog()))
+                .anyMatch(level -> level == LogLevel.FILE || level == LogLevel.ALL);
+
+        if (!fileLoggingConfigured) return;
+        if (!ClassUtils.isPresent(LOGBACK_LOGGER_CLASS, ClassUtils.getDefaultClassLoader())) return;
+
+        if (!LogbackAppenderCheck.hasAppender(MIDO_FILE_LOGGER_NAME)) {
+            log.warn("Channels are configured with log: file/all but no appender is attached to the '{}' logger — "
+                            + "those lines will fall through to the root logger. Declare it in logback.xml.",
+                    MIDO_FILE_LOGGER_NAME);
+        }
+    }
+
+    /**
+     * Isolates the Logback-specific type reference into its own class so that the reference is only
+     * resolved when {@link #warnWhenFileLoggerHasNoAppender()} has already confirmed Logback is on
+     * the classpath.
+     */
+    private static final class LogbackAppenderCheck {
+
+        private LogbackAppenderCheck() {
+        }
+
+        static boolean hasAppender(String loggerName) {
+            org.slf4j.Logger logger = LoggerFactory.getLogger(loggerName);
+            if (logger instanceof ch.qos.logback.classic.Logger logbackLogger) {
+                return logbackLogger.iteratorForAppenders().hasNext();
+            }
+            // Logback이 클래스패스에 있어도 바인딩이 다른 경우가 있다 — 판단하지 않고 경고를 건너뛴다.
+            return true;
+        }
+    }
+
+    /**
+     * Releases every channel's connection pool when the context shuts down.
+     *
+     * <p>{@code shutdown()} is used rather than {@code close()} on purpose: it is non-blocking, so a
+     * request still in flight cannot stall context shutdown. In-flight exchanges finish, then the
+     * selector and pool threads exit.
+     */
+    @Override
+    public void destroy() {
+        // clientCache를 먼저 비우면 캐시된 HttpClient가 도달 불가가 되어 shutdown 대상에서 빠질 수 있다.
+        httpClients.forEach(reference -> {
+            HttpClient httpClient = reference.get();
+            if (httpClient != null) httpClient.shutdown();
+        });
+        httpClients.clear();
+        clientCache.clear();
+    }
+
+    private void validateInterceptors(String channelName, String endpointName, MidoClientProperties.EndpointConfig endpointConfig) {
+        if (endpointConfig == null || endpointConfig.getInterceptors() == null) return;
+
+        for (String className : endpointConfig.getInterceptors()) {
+            try {
+                Class<?> interceptorClass = ClassUtils.forName(className, ClassUtils.getDefaultClassLoader());
+                if (!ClientHttpRequestInterceptor.class.isAssignableFrom(interceptorClass)) {
+                    throw new IllegalStateException(
+                            "Interceptor class does not implement ClientHttpRequestInterceptor: " + className);
+                }
+                interceptorClass.getDeclaredConstructor();
+            } catch (IllegalStateException e) {
+                throw new IllegalStateException(interceptorFailureMessage(channelName, endpointName), e);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(interceptorFailureMessage(channelName, endpointName),
+                        new IllegalStateException("Failed to load interceptor: " + className, e));
+            }
+        }
+    }
+
+    private String interceptorFailureMessage(String channelName, String endpointName) {
+        return "Invalid interceptor configured for channel: " + channelName + ", type: " + endpointName;
+    }
+
+    private Charset resolveCharset(String channelName, String charsetName) {
+        if (charsetName == null) return StandardCharsets.UTF_8;
+        try {
+            return Charset.forName(charsetName);
+        } catch (IllegalArgumentException e) {
+            // UnsupportedCharsetException / IllegalCharsetNameException 모두 IllegalArgumentException 하위다.
+            throw new IllegalStateException("Invalid charset '" + charsetName + "' for channel: " + channelName, e);
+        }
+    }
+
+    private void track(HttpClient httpClient) {
+        // 이미 회수된 one-off 클라이언트의 빈 참조를 걷어내 리스트가 무한히 자라지 않게 한다.
+        httpClients.removeIf(reference -> reference.refersTo(null));
+        httpClients.add(new WeakReference<>(httpClient));
+    }
+
+    /** Visible for tests: how many {@link HttpClient} instances {@link #destroy()} would shut down. */
+    int trackedHttpClientCount() {
+        return (int) httpClients.stream().filter(reference -> !reference.refersTo(null)).count();
+    }
+
+    private BufferingClientHttpRequestFactory createRequestFactory(long connectTimeoutSeconds, long readTimeoutSeconds) {
         // BufferingClientHttpRequestFactory 래핑 유지: 로깅 인터셉터가 응답 body를 재read해야 한다.
-        return new BufferingClientHttpRequestFactory(factory);
-    }
-
-    private ClientHttpRequestFactory createSimpleRequestFactory(long connectTimeoutSeconds, long readTimeoutSeconds) {
-        SimpleClientHttpRequestFactory simpleFactory = new SimpleClientHttpRequestFactory();
-        simpleFactory.setConnectTimeout(Duration.ofSeconds(connectTimeoutSeconds));
-        simpleFactory.setReadTimeout(Duration.ofSeconds(readTimeoutSeconds));
-        return simpleFactory;
+        return new BufferingClientHttpRequestFactory(createJdkRequestFactory(connectTimeoutSeconds, readTimeoutSeconds));
     }
 
     private ClientHttpRequestFactory createJdkRequestFactory(long connectTimeoutSeconds, long readTimeoutSeconds) {
         // connectTimeout은 HttpClient 빌더에, readTimeout은 팩토리에 지정된다.
-        // followRedirects(NORMAL)로 기존 SimpleClientHttpRequestFactory의 리다이렉트 추종 동작을 맞춘다.
+        // followRedirects(NORMAL) — HttpClient 기본값은 NEVER다. NORMAL은 HTTPS→HTTP 다운그레이드를 거부한다.
         // Executor는 지정하지 않는다 — HttpClient 기본 executor를 쓰고 라이프사이클 소유권을 넘기지 않는다.
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
+        track(httpClient);
         JdkClientHttpRequestFactory jdkFactory = new JdkClientHttpRequestFactory(httpClient);
         jdkFactory.setReadTimeout(Duration.ofSeconds(readTimeoutSeconds));
         return jdkFactory;

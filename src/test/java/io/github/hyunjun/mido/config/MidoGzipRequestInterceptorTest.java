@@ -76,6 +76,39 @@ class MidoGzipRequestInterceptorTest {
         assertThat(compressed).isNotEqualTo(body);
         assertThat(decompress(compressed)).isEqualTo(body);
         assertThat(headers.getFirst(HttpHeaders.CONTENT_ENCODING)).isEqualTo("gzip");
+        // Content-Length는 제거하지 않고 압축 후 길이로 갱신한다 (chunked 전환 방지)
+        assertThat(headers.getContentLength()).isEqualTo(compressed.length);
+    }
+
+    @Test
+    void shouldSetContentLengthEvenWhenRequestHadNone() throws Exception {
+        // Given - Content-Length 헤더가 애초에 없던 요청
+        MidoGzipRequestInterceptor interceptor = new MidoGzipRequestInterceptor(10);
+        byte[] body = "0123456789ABCDEFGHIJ".getBytes(StandardCharsets.UTF_8);
+        when(execution.execute(eq(request), any(byte[].class))).thenReturn(response);
+
+        // When
+        interceptor.intercept(request, body, execution);
+
+        // Then - 압축 바이트 길이가 설정되어 전송 계층이 길이를 알 수 있다
+        ArgumentCaptor<byte[]> bodyCaptor = ArgumentCaptor.forClass(byte[].class);
+        verify(execution).execute(eq(request), bodyCaptor.capture());
+        assertThat(headers.getContentLength()).isEqualTo(bodyCaptor.getValue().length);
+    }
+
+    @Test
+    void shouldSkipCompressionForEmptyBodyEvenWhenMinSizeIsZero() throws Exception {
+        // Given - min-size: 0 이면 body 없는 GET에도 gzip 헤더가 붙는 문제
+        MidoGzipRequestInterceptor interceptor = new MidoGzipRequestInterceptor(0);
+        byte[] body = new byte[0];
+        when(execution.execute(eq(request), any(byte[].class))).thenReturn(response);
+
+        // When
+        interceptor.intercept(request, body, execution);
+
+        // Then - 압축하지 않고 헤더도 건드리지 않는다
+        verify(execution).execute(eq(request), eq(body));
+        assertThat(headers.getFirst(HttpHeaders.CONTENT_ENCODING)).isNull();
         assertThat(headers.getFirst(HttpHeaders.CONTENT_LENGTH)).isNull();
     }
 

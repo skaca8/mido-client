@@ -3,8 +3,6 @@ package io.github.hyunjun.mido.sample;
 import io.github.hyunjun.mido.api.BaseExternalApi;
 import io.github.hyunjun.mido.config.MidoClientFactory;
 import io.github.hyunjun.mido.constant.EndpointType;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -15,7 +13,6 @@ import org.springframework.web.client.RestClient;
 @Service
 public class PaymentService extends BaseExternalApi {
 
-    private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
     private final MidoClientFactory midoClientFactory;
 
     public PaymentService(MidoClientFactory midoClientFactory) {

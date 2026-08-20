@@ -31,7 +31,7 @@ factory classes, no repeated setup code.
 - **Per-endpoint authentication** — Bearer, Basic, API Key
 - **Smart charset detection** — Content-Type header → UTF-8 validation → channel default fallback
 - **Custom interceptors** — register any `ClientHttpRequestInterceptor` by class name in YAML
-- **Pluggable HTTP transport** — pick `simple` (default, `HttpURLConnection`) or `jdk` (`java.net.http.HttpClient`, per-channel connection pool + HTTP/2) globally or per endpoint
+- **Per-channel connection isolation** — every channel/endpoint gets its own `java.net.http.HttpClient`, so one saturated channel cannot starve the others; HTTP/2 included
 - **Per-channel gzip** — opt-in request compression with `min-size` skip threshold; response auto-decompression with decompression-bomb defense cap (`max-decompressed-size`)
 - **Per-channel content type** — pick `json` (default) or `xml` per channel; the request `Content-Type` header is set automatically
 - **Fail-fast configuration validation** — `@Validated` Bean Validation rejects malformed YAML at startup with a `BindValidationException` indicating the offending field
@@ -65,7 +65,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:2.0.1'
+    implementation 'com.github.skaca8:mido-client:3.0.0'
 }
 ```
 
@@ -83,18 +83,18 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>2.0.1</version>
+    <version>3.0.0</version>
 </dependency>
 ```
 
-> To use a specific release, replace `2.0.1` with a tag or a commit hash.
+> To use a specific release, replace `3.0.0` with a tag or a commit hash.
 
 #### via Maven Central (published release)
 
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:2.0.1'
+implementation 'io.github.skaca8:mido-client:3.0.0'
 ```
 
 **Maven**
@@ -104,7 +104,7 @@ implementation 'io.github.skaca8:mido-client:2.0.1'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>2.0.1</version>
+    <version>3.0.0</version>
 </dependency>
 ```
 
@@ -207,7 +207,8 @@ public class PaymentService extends BaseExternalApi {
 | `read-timeout-seconds`    | Long           | `60`      | Read timeout                                                  |
 | `connect-timeout-seconds` | Long           | `3`       | Connection timeout                                            |
 | `log`                     | LogLevel       | `console` | `off` / `console` / `file` / `all`                            |
-| `client-type`             | ClientType     | (inherits global) | `simple` / `jdk` — HTTP transport for this endpoint; overrides `mido-client.client-type` |
+| `log-body`                | Boolean        | `true`    | Include request/response bodies in the log lines. Set `false` on endpoints carrying PII, card, or token data |
+| `log-max-body-bytes`      | Integer        | `8192`    | Max body bytes per log line; the rest becomes `...(truncated N bytes)`. `0` = no limit |
 | `authorization.type`      | TokenType      | -         | `bearer` / `basic` / `api_key`                                |
 | `authorization.token`     | String         | -         | Authentication token value                                    |
 | `headers`                 | List           | -         | Static headers to attach to every request                     |
@@ -222,7 +223,6 @@ public class PaymentService extends BaseExternalApi {
 | Property                  | Type       | Default  | Description                                                        |
 |---------------------------|------------|----------|--------------------------------------------------------------------|
 | `mido-client.enabled`     | Boolean    | `false`  | Enable/disable the entire library                                  |
-| `mido-client.client-type` | ClientType | `simple` | Default HTTP transport for every channel; a per-endpoint `client-type` overrides it |
 
 ### Configuration Validation
 
@@ -235,6 +235,13 @@ public class PaymentService extends BaseExternalApi {
 - `headers[].name` or `headers[].value` is blank
 - A channel is missing its required `primary` endpoint
 - `type` is explicitly set to `null` (must be `json` or `xml`; unknown values are rejected separately by Spring's enum binder at startup)
+
+Beyond bean validation, the `MidoClientFactory` bean checks the following at startup, so a typo does not wait for the first request to surface:
+
+- `charset` names an unknown charset → `Invalid charset '<name>' for channel: <channel>`
+- an `interceptors[]` entry cannot be loaded, does not implement `ClientHttpRequestInterceptor`, or has no public no-arg constructor → the message names the channel and endpoint
+
+Interceptor classes are loaded and inspected but **not instantiated** during this check, so a constructor with side effects does not run twice.
 
 ## Advanced Usage
 
@@ -390,7 +397,7 @@ mido-client:
 **Behavior**:
 
 - `type: json` (default) — `Content-Type: application/json` is attached to every request; POJO bodies are serialized via Jackson.
-- `type: xml` — `Content-Type: application/xml` is attached to every request. Provide the body as a pre-serialized XML `String` (Jackson XML marshalling is not bundled — bring your own converter via `interceptors` if you need POJO ↔ XML).
+- `type: xml` — `Content-Type: application/xml` is attached to every request. A pre-serialized XML `String` body always works. POJO ↔ XML depends on your classpath: `mido-client` keeps `RestClient`'s default converter list (only the `String` converter is replaced, to apply the channel `charset`), so adding `jackson-dataformat-xml` to your application enables `MappingJackson2XmlHttpMessageConverter`. It is not a `mido-client` dependency.
 
 ### Gzip Compression
 
@@ -411,38 +418,37 @@ mido-client:
 
 **Behavior**:
 
-- `request: true` — bodies ≥ `min-size` bytes are gzipped before sending; `Content-Encoding: gzip` is added automatically.
+- `request: true` — bodies ≥ `min-size` bytes are gzipped before sending; `Content-Encoding: gzip` is added and `Content-Length` is updated to the compressed length. An empty body is never compressed, even with `min-size: 0`, so a bodyless `GET` does not pick up a gzip header.
 - `response: true` — `Accept-Encoding: gzip` is sent; if the server replies with `Content-Encoding: gzip`, the body is transparently decompressed before reaching your message converters.
 - `max-decompressed-size` defends against decompression bombs — if the decompressed response exceeds the cap, an `IOException` is thrown immediately and memory stays bounded to roughly buffer + cap.
 
-Interceptors are ordered so that logging always sees plain-text bodies while the network carries compressed bytes.
+Interceptors are ordered so that logging always sees plain-text bodies while the network carries compressed bytes. The full chain is:
 
-### HTTP Transport (`simple` / `jdk`)
-
-Choose the underlying request factory globally or per endpoint. The default is `simple`, so existing configurations keep their current behavior.
-
-```yaml
-mido-client:
-  enabled: true
-  client-type: jdk               # global default for every channel
-  channels:
-    payment:
-      primary:
-        url: https://api.payment.com
-        # inherits global -> jdk
-      secondary:
-        url: https://process.payment.com
-        client-type: simple      # override just this endpoint
+```
+your custom interceptors  →  mido logging  →  mido gzip  →  transport
 ```
 
-| Value    | Backing factory                  | Connection reuse                          | HTTP/2 |
-|----------|----------------------------------|-------------------------------------------|--------|
-| `simple` | `SimpleClientHttpRequestFactory` | JVM-global `HttpURLConnection` keep-alive | No     |
-| `jdk`    | `JdkClientHttpRequestFactory`    | Per-channel `HttpClient` connection pool  | Yes    |
+⚠️ **Custom interceptors run outermost, so they see the request body *before* compression.** An interceptor that signs or hashes the body (HMAC, checksum, content-digest header) computes over the plain bytes while the server receives the gzipped ones — the check fails on the server side. On a channel with `gzip.request: true`, either compute the signature over the compressed body yourself inside the interceptor, or leave request compression off for that channel.
 
-**When to pick `jdk`**: since a `simple` client reuses connections through the JVM-global keep-alive cache, all channels effectively share one pool. `jdk` gives each channel/endpoint its own `HttpClient` — and therefore its own connection pool — which is what actually delivers per-channel connection isolation. Prefer it for high-throughput channels or when HTTP/2 matters.
+### HTTP Transport
 
-**Behavior notes**: the `jdk` transport follows redirects (`Redirect.NORMAL`, which refuses HTTPS→HTTP downgrades) and applies `connect-timeout-seconds` / `read-timeout-seconds` the same way. Unlike `simple`, the JDK `HttpClient` does not use the JVM's default proxy selector unless explicitly configured. Both transports keep the logging and gzip interceptor behavior unchanged.
+Every channel is backed by `JdkClientHttpRequestFactory` over `java.net.http.HttpClient`. There is nothing to configure — the point is that **each channel/endpoint gets its own `HttpClient`, and therefore its own connection pool.** A slow or saturated channel cannot starve the others, which is the isolation this library exists to provide.
+
+| Property        | Value                                                    |
+|-----------------|----------------------------------------------------------|
+| Request factory | `JdkClientHttpRequestFactory`                            |
+| Connection pool | One per channel/endpoint                                 |
+| HTTP/2          | Yes (negotiated, with HTTP/1.1 fallback)                  |
+| Redirects       | Followed (`Redirect.NORMAL`, refuses HTTPS→HTTP downgrade) |
+| Proxy           | `http.proxyHost` / `https.proxyHost` system properties honored — mido-client never calls `HttpClient.Builder.proxy()`, and a builder that does not is documented to use `ProxySelector.getDefault()` |
+
+**`read-timeout-seconds` is a whole-exchange deadline, not a socket idle timeout.** It covers everything from request send to the response body being fully consumed, and expires as `HttpTimeoutException`. Spring implements it with its own `TimeoutHandler` rather than `HttpRequest.Builder#timeout` (a workaround for [JDK-8258397](https://bugs.openjdk.org/browse/JDK-8258397)); the timer is cancelled when the response body stream is closed. So size the value against **total expected call time**, not per-packet gaps — a response that trickles in slowly but steadily will still be cut off. `mido-client` buffers the whole response for logging anyway, so this is not a streaming-download client.
+
+`connect-timeout-seconds` maps to `HttpClient.Builder.connectTimeout` and surfaces separately as `HttpConnectTimeoutException`, which is why [`FailureType`](#logging) can tell "never reached the server" from "may already have been sent".
+
+⚠️ **Responses are buffered in memory, not streamed.** Every transport is wrapped in `BufferingClientHttpRequestFactory` so the logging interceptor can re-read the body, which means the full response is held as a `byte[]` regardless of your `log` / `log-body` settings. `log-max-body-bytes` bounds what reaches the *log*, not what reaches the *heap*. Do not point a channel at an endpoint that returns responses large enough to matter against your heap — this is not a file-download client.
+
+**Lifecycle**: every client is shut down when the Spring context closes (`MidoClientFactory` implements `DisposableBean`). `HttpClient.shutdown()` is used rather than `close()` so that a request still in flight cannot stall shutdown — in-flight exchanges finish and the selector/pool threads then exit.
 
 ### ChannelContext & MDC
 
@@ -470,6 +476,8 @@ The action key `channelAction` is available in log patterns:
 
 ## Logging
 
+`log` picks the **destination**, not the severity:
+
 | Level     | Console | File (`MidoClientFileLog`) |
 |-----------|---------|----------------------------|
 | `off`     | -       | -                          |
@@ -477,7 +485,58 @@ The action key `channelAction` is available in log patterns:
 | `file`    | -       | Yes                        |
 | `all`     | Yes     | Yes                        |
 
+Severity follows the outcome, so alerting can key on the level instead of parsing log text:
+
+| Outcome                                      | Level   |
+|----------------------------------------------|---------|
+| Request line, 2xx / 3xx response             | `info`  |
+| 4xx response                                 | `warn`  |
+| 5xx response                                 | `error` |
+| Transport failure (no response)              | `error` |
+
 Each log entry includes: channel action, HTTP method, URL, request/response body, response time, HTTP status.
+
+If `log: file` or `log: all` is configured but the host application never declared a `MidoClientFileLog` logger, a warning is emitted at startup — otherwise those lines would silently fall through to the root logger. The check runs on Logback only; on other SLF4J bindings it is skipped rather than guessed at.
+
+A call that fails before a response arrives (connect / read timeout, DNS, TLS) is logged as a separate `[mido-client failure]` line at **error** level, carrying the elapsed time, the failure classification, and the exception type/message. The stack trace is not repeated there — the exception propagates to the caller unchanged.
+
+```
+[mido-client failure] channelAction: payment.pay, method: POST, url: https://api.payment.com/pay,
+elapsedMs: 3011, failureType: timeout, delivery: UNKNOWN, exception: java.net.SocketTimeoutException: Read timed out
+```
+
+`failureType` / `delivery` come from `FailureType.classify(Throwable)`, which you can call yourself instead of walking the `cause` chain. mido-client **never wraps or replaces** the exception Spring and the JDK throw, so existing handlers and Resilience4j exception predicates keep working:
+
+```java
+catch (RestClientException e) {
+    if (FailureType.classify(e).getDelivery() == FailureType.Delivery.NOT_DELIVERED) {
+        retry();   // the request never reached the server — safe even when not idempotent
+    }
+}
+```
+
+| `failureType`                     | `delivery`      | Meaning                                       |
+|-----------------------------------|-----------------|-----------------------------------------------|
+| `dns`                             | `NOT_DELIVERED` | Host name did not resolve                     |
+| `tls`                             | `NOT_DELIVERED` | Handshake / certificate failure                |
+| `connect`                         | `NOT_DELIVERED` | Refused, unreachable, or connect timeout      |
+| `timeout`                         | `UNKNOWN`       | Timed out; may or may not have been sent      |
+| `client-error` / `server-error`   | `DELIVERED`     | Server answered 4xx / 5xx                     |
+| `unknown`                         | `UNKNOWN`       | Nothing matched                               |
+
+A connect timeout arrives as `HttpConnectTimeoutException` and is classified as `connect` (not delivered); a response timeout arrives as `HttpTimeoutException` and stays `timeout` (delivery unknown), because the request may already have been sent.
+
+To keep bodies out of the logs on an endpoint carrying PII, card, or token data, set `log-body: false`. The body is then not read at all (this is omission, not masking) and the line shows `body: (omitted)`; status, elapsed time, and channel action are still logged.
+
+```yaml
+mido-client:
+  channels:
+    payment:
+      primary:
+        url: https://api.payment.com
+        log: console
+        log-body: false        # card numbers and tokens never reach the log
+```
 
 To enable file logging, add a logger named `MidoClientFileLog` in your `logback.xml`:
 

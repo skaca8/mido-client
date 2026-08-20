@@ -1,6 +1,5 @@
 package io.github.hyunjun.mido.config;
 
-import io.github.hyunjun.mido.constant.ClientType;
 import io.github.hyunjun.mido.constant.ContentType;
 import io.github.hyunjun.mido.constant.LogLevel;
 import io.github.hyunjun.mido.constant.TokenType;
@@ -22,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeSet;
 
 /**
  * Root type bound from the {@code mido-client.*} property prefix in {@code application.yml}.
@@ -41,14 +41,6 @@ public class MidoClientProperties {
 
     /** Master switch — when {@code false} (default), the auto-configuration is skipped entirely. */
     Boolean enabled = false;
-
-    /**
-     * Default HTTP transport for every channel. A per-endpoint {@code client-type} overrides this;
-     * an endpoint that leaves it unset inherits this value. Defaults to {@link ClientType#SIMPLE}
-     * so existing configurations keep their current transport behavior.
-     */
-    @NotNull
-    ClientType clientType = ClientType.SIMPLE;
 
     /** Channel definitions keyed by channel name. Keys are normalized to lowercase at bind time. */
     Map<String, @Valid ChannelConfig> channels = new HashMap<>();
@@ -123,11 +115,23 @@ public class MidoClientProperties {
         LogLevel log = LogLevel.CONSOLE;
 
         /**
-         * HTTP transport for this endpoint. When {@code null} (the default), inherits the top-level
-         * {@code mido-client.client-type}. Set it here to override the transport for a single
-         * endpoint. See {@link ClientType}.
+         * Whether request/response bodies are included in the log lines. Defaults to {@code true}
+         * (the historical behavior). Set it to {@code false} on endpoints carrying PII, card, or
+         * token data: the status, elapsed time, and channel action are still logged, only the body
+         * is replaced with {@code (omitted)}.
          */
-        ClientType clientType;
+        @NotNull
+        Boolean logBody = true;
+
+        /**
+         * Maximum number of body bytes written to a log line, per direction. Defaults to
+         * {@code 8192}; the remainder is replaced with {@code ...(truncated N bytes)}. Set it to
+         * {@code 0} for no limit — be deliberate about that on endpoints returning large lists,
+         * since an untruncated body reaches both the log file and the log pipeline in full.
+         */
+        @NotNull
+        @PositiveOrZero
+        Integer logMaxBodyBytes = 8192;
 
         /**
          * Fully-qualified class names of {@code ClientHttpRequestInterceptor} implementations to
@@ -240,13 +244,16 @@ public class MidoClientProperties {
      *
      * @param channelName YAML channel key (any casing)
      * @return matching channel configuration
-     * @throws IllegalArgumentException if no channel with that name (case-insensitive) is configured
+     * @throws IllegalArgumentException if no channel with that name (case-insensitive) is configured;
+     *                                  the message lists every configured channel name
      */
     public ChannelConfig getChannelConfig(String channelName) {
         String normalizedName = normalizeChannelName(channelName);
         ChannelConfig config = channels.get(normalizedName);
         if (config == null) {
-            throw new IllegalArgumentException("Unknown Channel: " + channelName);
+            // 설정된 채널 목록을 함께 노출한다 — 오타·대소문자 문제를 메시지만 보고 판단할 수 있다.
+            throw new IllegalArgumentException(
+                    "Unknown Channel: " + channelName + ". Configured channels: " + new TreeSet<>(channels.keySet()));
         }
         return config;
     }

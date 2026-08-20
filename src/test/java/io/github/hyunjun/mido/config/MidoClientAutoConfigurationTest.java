@@ -1,11 +1,22 @@
 package io.github.hyunjun.mido.config;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.github.hyunjun.mido.constant.ContentType;
 import io.github.hyunjun.mido.constant.LogLevel;
 import io.github.hyunjun.mido.constant.TokenType;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.http.HttpRequest;
+import org.springframework.http.client.ClientHttpRequestExecution;
+import org.springframework.http.client.ClientHttpRequestInterceptor;
+import org.springframework.http.client.ClientHttpResponse;
+
+import java.io.IOException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -310,5 +321,132 @@ class MidoClientAutoConfigurationTest {
                     assertThat(gzip.getMinSize()).isEqualTo(1024);
                     assertThat(gzip.getMaxDecompressedSize()).isEqualTo(10 * 1024 * 1024);
                 });
+    }
+
+    @Test
+    void shouldFailStartupWhenInterceptorClassDoesNotExist() {
+        // Given - FQCN 오타. 첫 요청이 아니라 기동 시점에 잡혀야 한다.
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.primary.url=https://api.test.com",
+                        "mido-client.channels.test.primary.interceptors[0]=com.example.NoSuchInterceptor"
+                )
+                .run(context -> assertThat(context)
+                        .hasFailed()
+                        .getFailure()
+                        .hasStackTraceContaining("channel: test, type: primary")
+                        .hasStackTraceContaining("Failed to load interceptor: com.example.NoSuchInterceptor"));
+    }
+
+    @Test
+    void shouldFailStartupWhenInterceptorDoesNotImplementInterface() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.secondary.url=https://api2.test.com",
+                        "mido-client.channels.test.primary.url=https://api.test.com",
+                        "mido-client.channels.test.secondary.interceptors[0]=java.lang.String"
+                )
+                .run(context -> assertThat(context)
+                        .hasFailed()
+                        .getFailure()
+                        .hasStackTraceContaining("channel: test, type: secondary")
+                        .hasStackTraceContaining("does not implement ClientHttpRequestInterceptor: java.lang.String"));
+    }
+
+    @Test
+    void shouldFailStartupWhenCharsetIsUnknown() {
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.charset=NO-SUCH-CHARSET",
+                        "mido-client.channels.test.primary.url=https://api.test.com"
+                )
+                .run(context -> assertThat(context)
+                        .hasFailed()
+                        .getFailure()
+                        .hasStackTraceContaining("Invalid charset 'NO-SUCH-CHARSET' for channel: test"));
+    }
+
+    @Test
+    void shouldStartWhenInterceptorIsValid() {
+        // Given - 유효한 인터셉터는 기동을 막지 않고, 생성자는 이 시점에 호출되지 않는다
+        CountingInterceptor.instantiations = 0;
+        contextRunner
+                .withPropertyValues(
+                        "mido-client.enabled=true",
+                        "mido-client.channels.test.primary.url=https://api.test.com",
+                        "mido-client.channels.test.primary.interceptors[0]="
+                                + CountingInterceptor.class.getName()
+                )
+                .run(context -> {
+                    assertThat(context).hasNotFailed().hasSingleBean(MidoClientFactory.class);
+                    assertThat(CountingInterceptor.instantiations).isZero();
+                });
+    }
+
+    @Test
+    void shouldWarnWhenFileLoggerHasNoAppender() {
+        // Given - log: all 인데 MidoClientFileLog 로거에 appender가 없다
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        Logger factoryLogger = (Logger) LoggerFactory.getLogger(MidoClientFactory.class);
+        factoryLogger.addAppender(appender);
+
+        try {
+            contextRunner
+                    .withPropertyValues(
+                            "mido-client.enabled=true",
+                            "mido-client.channels.test.primary.url=https://api.test.com",
+                            "mido-client.channels.test.primary.log=all"
+                    )
+                    .run(context -> {
+                        assertThat(context).hasNotFailed();
+                        assertThat(appender.list)
+                                .anyMatch(event -> event.getLevel() == Level.WARN
+                                        && event.getFormattedMessage().contains("MidoClientFileLog"));
+                    });
+        } finally {
+            factoryLogger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
+    @Test
+    void shouldNotWarnAboutFileLoggerWhenNoEndpointUsesIt() {
+        // Given - log: console 만 사용
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        Logger factoryLogger = (Logger) LoggerFactory.getLogger(MidoClientFactory.class);
+        factoryLogger.addAppender(appender);
+
+        try {
+            contextRunner
+                    .withPropertyValues(
+                            "mido-client.enabled=true",
+                            "mido-client.channels.test.primary.url=https://api.test.com",
+                            "mido-client.channels.test.primary.log=console"
+                    )
+                    .run(context -> assertThat(appender.list)
+                            .noneMatch(event -> event.getFormattedMessage().contains("MidoClientFileLog")));
+        } finally {
+            factoryLogger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
+    public static class CountingInterceptor implements ClientHttpRequestInterceptor {
+
+        static int instantiations = 0;
+
+        public CountingInterceptor() {
+            instantiations++;
+        }
+
+        @Override
+        public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution) throws IOException {
+            return execution.execute(request, body);
+        }
     }
 }

@@ -55,7 +55,9 @@ public abstract class BaseExternalApi {
                 log.debug("Starting channel action: {}", channelAction);
                 return supplier.get();
             } catch (Exception e) {
-                log.error("Failed channel action: {}", channelAction, e);
+                // debug로 남긴다 — 예외는 그대로 전파되고, 4xx/5xx와 전송 실패는 이미
+                // MidoLoggingInterceptor가 warn/error로 기록한다. 여기서 error를 내면 로그가 3중이 된다.
+                log.debug("Failed channel action: {}", channelAction, e);
                 throw e;
             }
         });

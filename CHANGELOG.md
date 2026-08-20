@@ -5,6 +5,116 @@ All notable changes to `mido-client` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-08-20
+
+### ⚠️ Breaking Changes
+
+- **The pluggable HTTP transport is gone; every channel now uses `JdkClientHttpRequestFactory`.**
+  The `ClientType` enum, `mido-client.client-type`, and the per-endpoint `client-type` are
+  **removed** — a configuration point with one possible value is not a configuration point. The
+  `simple` transport (`SimpleClientHttpRequestFactory` over `HttpURLConnection`) reused connections
+  through the JVM-global keep-alive cache, so every channel shared one pool; it directly contradicted
+  the per-channel isolation this library exists to provide. `java.net.http.HttpClient` gives each
+  channel/endpoint its own pool, plus HTTP/2.
+
+  Removing the escape hatch is safe because the reason to keep one turned out not to exist: both
+  transports honor `http.proxyHost` / `https.proxyHost`. mido-client never calls
+  `HttpClient.Builder.proxy()`, and a builder that does not is documented to use
+  `ProxySelector.getDefault()`, which reads those system properties. Earlier releases of this
+  changelog and README claimed otherwise — that claim was wrong.
+
+  **What to check when upgrading**: `read-timeout-seconds` changes meaning. On `simple` it was a
+  socket idle timeout; it is now a whole-exchange deadline covering request send through response
+  body consumption, surfacing as `HttpTimeoutException`. Size it against total expected call time.
+  Remove any `client-type` keys from YAML — an unknown property is not rejected by default, but it no
+  longer does anything. Code referencing `io.github.hyunjun.mido.constant.ClientType` no longer
+  compiles.
+
+### Added
+
+- **`FailureType.classify(Throwable)` classifies a failed call without wrapping the exception.**
+  Returns `DNS` / `TLS` / `CONNECT` / `TIMEOUT` / `CLIENT_ERROR` / `SERVER_ERROR` / `UNKNOWN`, each
+  carrying a `Delivery` verdict (`NOT_DELIVERED` / `DELIVERED` / `UNKNOWN`) that answers the question
+  a caller actually has: may a non-idempotent request be retried? mido-client deliberately does
+  **not** introduce its own exception hierarchy — `RestClientException`, `SocketTimeoutException`,
+  and `HttpTimeoutException` still propagate unchanged, so existing handlers and Resilience4j
+  exception predicates keep working. The `[mido-client failure]` log line now carries
+  `failureType` / `delivery` as well.
+- **`log-max-body-bytes` (per endpoint, default `8192`) caps how much body reaches a log line.**
+  The remainder becomes `...(truncated N bytes)` and is never materialized as a String. `0` disables
+  the cap. Note this changes existing behavior: bodies over 8 KB are truncated in the log by
+  default. Set `log-max-body-bytes: 0` to keep full bodies.
+- **`log-body` (per endpoint, default `true`) keeps request/response bodies out of the logs.** Set it
+  to `false` on endpoints carrying PII, card, or token data: the body is not read at all (omission,
+  not masking) and the log line shows `body: (omitted)`, while status, elapsed time, and channel
+  action are still recorded.
+- **Startup validation of `charset` and `interceptors`.** `MidoClientFactory` now implements
+  `InitializingBean` and fails the context with a message naming the channel and endpoint when a
+  `charset` is unknown, or an `interceptors[]` entry cannot be loaded, does not implement
+  `ClientHttpRequestInterceptor`, or has no public no-arg constructor. Previously these surfaced on
+  the first request to the channel. Interceptor classes are loaded and inspected but **not
+  instantiated**, so a constructor with side effects does not run twice.
+
+### Fixed
+
+- **A channel without a `secondary` endpoint no longer builds two identical clients.**
+  `getOrCreateClient(name, SECONDARY)` fell back to the primary *configuration* but cached under the
+  `-secondary` key, so the channel ended up with two identically configured `RestClient` instances —
+  and, on the `jdk` transport, two `HttpClient` instances with two connection pools. The fallback is
+  now applied before the cache lookup, so both calls return the same cached client.
+- **`HttpClient` instances are now released on context shutdown.** `MidoClientFactory` implements
+  `DisposableBean` and calls `HttpClient.shutdown()` on every client it built. `shutdown()` rather
+  than `close()`, deliberately: it is non-blocking, so an in-flight request cannot stall context
+  shutdown. Previously the instances were unreachable once handed to `JdkClientHttpRequestFactory`
+  and lingered until GC — visible across devtools restarts and repeated test contexts. The tracking
+  list holds `WeakReference`s so that a one-off client built through the public `baseRestClient(...)`
+  and then dropped stays collectable; pinning it would keep its selector thread alive for the life of
+  the JVM.
+- **gzip request compression skips an empty body regardless of `min-size`.** With `min-size: 0` a
+  bodyless `GET` was given `Content-Encoding: gzip` and a ~20-byte gzip header.
+- **`RestClient`'s default message converters are no longer discarded.** `configureMessageConverters`
+  called `converters.clear()` before registering String + Jackson, which removed
+  `ByteArrayHttpMessageConverter`, `ResourceHttpMessageConverter`, and
+  `AllEncompassingFormHttpMessageConverter` — so `body(byte[].class)`, resource downloads, and
+  form/multipart uploads were impossible. Only the default `String` converter is now replaced (to
+  apply the channel `charset`); everything else, Jackson included, is left in place. A consumer with
+  `jackson-dataformat-xml` on the classpath now also gets POJO ↔ XML on `type: xml` channels.
+- **A channel-declared header now overrides mido-client's own default.** Custom headers were added
+  with `HttpHeaders.add`, so a channel declaring `Accept: application/json` sent
+  `Accept: */*, application/json` — equal q-values, letting the server pick either. The first
+  declaration of a name now uses `set`; repeated declarations of the same name still accumulate.
+- **gzip request compression no longer drops `Content-Length`.** `MidoGzipRequestInterceptor` removed
+  the header instead of updating it, leaving the transport without a body length, so
+  `JdkClientHttpRequest` fell back to a length-less `BodyPublisher` and the request went out chunked.
+  Servers that reject chunked request bodies answered `411`/`400`. The header is now set to the
+  compressed body length.
+- **Custom interceptors now resolve through the default class loader.** `Class.forName(String)` used
+  the class loader that loaded mido-client, which cannot see consumer classes loaded by
+  spring-boot-devtools' `RestartClassLoader` — an interceptor named in `interceptors:` failed with
+  `ClassNotFoundException` under devtools. Lookup now goes through
+  `ClassUtils.forName(name, ClassUtils.getDefaultClassLoader())`.
+
+### Changed
+
+- **Transport failures are now logged.** When the request fails before a response arrives (connect /
+  read timeout, DNS, TLS), `MidoLoggingInterceptor` emits a `[mido-client failure]` line at `error`
+  level carrying the channel action, method, URL, elapsed time, and exception type/message, then
+  rethrows unchanged. Previously only the request line was logged, so failed calls left no duration
+  or cause behind. The line honors `log: off` and the `console` / `file` / `all` destinations.
+- **Response log severity now follows the status code.** 5xx logs at `error`, 4xx at `warn`,
+  everything else at `info`; previously every line was `info`, so a failing channel was invisible to
+  level-based alerting. `LogLevel` (`off` / `console` / `file` / `all`) remains what it always was —
+  the destination, not the severity.
+- **`BaseExternalApi.withDefaultChannelAction` logs a failed action at `debug` instead of `error`.**
+  With 4xx/5xx and transport failures now logged at `warn`/`error` by the interceptor, and the
+  exception still propagating to the caller, the `error` line was the third copy of the same failure.
+- **A missing `MidoClientFileLog` logger is reported at startup.** When an endpoint uses `log: file`
+  or `log: all` and no appender is attached to that logger, the lines silently went to root. A
+  warning is now emitted. Logback only; on other SLF4J bindings the check is skipped rather than
+  guessed at.
+- **`Unknown Channel` errors now list the configured channel names**, so a typo or casing mistake is
+  diagnosable from the message alone.
+
 ## [2.0.0] - 2026-07-02
 
 ### ⚠️ Breaking Changes
