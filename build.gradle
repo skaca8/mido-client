@@ -129,19 +129,39 @@ if (signingKey.trim()) {
     }
 }
 
+// README의 버전 문자열은 mido-client 좌표에 앵커링해서만 치환한다.
+// 앵커 없는 패턴(예: 백틱 안 semver 전부, 맨 <version>)은 Spring Boot·Gradle 버전이나
+// 다른 의존성 스니펫까지 조용히 덮어쓴다.
+def readmeVersionPatterns = [
+        ~/((?:com|io)\.github\.skaca8:mido-client:)\d+\.\d+\.\d+/,
+        ~/(<artifactId>mido-client<\/artifactId>\s*<version>)\d+\.\d+\.\d+/
+]
+
+// 파일당 치환 지점 수: Gradle 좌표 2개(JitPack·Central) + Maven <version> 2개.
+def readmeVersionOccurrences = 4
+
 tasks.register('updateReadmeVersion') {
     doLast {
-        def versionPattern = ~/([0-9]+\.[0-9]+\.[0-9]+)/
         ['README.md', 'README.ko.md'].each { filename ->
             def f = file(filename)
-            def updated = f.text.replaceAll(
-                /(com\.github\.skaca8:mido-client:|io\.github\.skaca8:mido-client:|<version>)[0-9]+\.[0-9]+\.[0-9]+/,
-                { m -> m[0].replaceAll(versionPattern, version) }
-            ).replaceAll(
-                /(`)[0-9]+\.[0-9]+\.[0-9]+(`)/,
-                { m -> m[0].replaceAll(versionPattern, version) }
-            )
-            f.text = updated
+            def text = f.text
+            def replaced = 0
+
+            readmeVersionPatterns.each { pattern ->
+                text = text.replaceAll(pattern) { match ->
+                    replaced++
+                    match[1] + version
+                }
+            }
+
+            // 치환 수가 다르면 README 구조가 바뀐 것이다. 잘못된 문서를 조용히 커밋하는 대신 릴리즈를 멈춘다.
+            if (replaced != readmeVersionOccurrences) {
+                throw new GradleException("$filename: replaced $replaced version string(s), expected " +
+                        "$readmeVersionOccurrences. Adjust readmeVersionPatterns / readmeVersionOccurrences " +
+                        "in build.gradle if the README dependency blocks changed.")
+            }
+
+            f.text = text
         }
         println "README versions updated to $version"
     }

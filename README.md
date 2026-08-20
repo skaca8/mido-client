@@ -87,7 +87,7 @@ dependencies {
 </dependency>
 ```
 
-> To use a specific release, replace `3.0.0` with a tag or a commit hash.
+> To use a specific release, replace the version above with a tag or a commit hash.
 
 #### via Maven Central (published release)
 
