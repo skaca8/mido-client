@@ -26,16 +26,24 @@ import java.net.http.HttpTimeoutException;
  *
  * <pre>{@code
  * catch (RestClientException e) {
- *     if (FailureType.classify(e).getDelivery() == FailureType.Delivery.NOT_DELIVERED) {
- *         retry();   // 서버에 도달하지 않았으므로 비멱등 요청도 재시도 가능
- *     }
+ *     log.warn("call failed: {}", FailureType.classify(e));
+ *     throw translate(e);
  * }
  * }</pre>
  *
+ * <p><strong>{@link Delivery} is an observation, not a retry policy.</strong> It answers "did the
+ * request reach the server", which is not the same question as "is re-running this operation safe".
+ * The second question is about the operation's own semantics — a non-idempotent call needs an
+ * idempotency key regardless of what this classifier says, because
+ * {@link Delivery#UNKNOWN} is a frequent and unavoidable answer. Treating
+ * {@link Delivery#NOT_DELIVERED} as "safe to retry" is the mistake this class is most likely to
+ * invite; it holds only for operations that are already safe to re-run.
+ *
  * <p>A connect timeout is reported separately from a response timeout
  * ({@code HttpConnectTimeoutException} vs {@code HttpTimeoutException}), so the former is classified
- * as {@link #CONNECT} — request not delivered — while the latter stays {@link #TIMEOUT} with
- * {@link Delivery#UNKNOWN}, because the request may already have been sent.
+ * as {@link #CONNECT} while the latter stays {@link #TIMEOUT} with {@link Delivery#UNKNOWN}. Note
+ * that {@code read-timeout-seconds} is a whole-exchange deadline, so a {@link #TIMEOUT} routinely
+ * means "the server processed the request but the response did not arrive in time".
  */
 @Getter
 @RequiredArgsConstructor
@@ -43,8 +51,15 @@ public enum FailureType {
 
     /** Host name could not be resolved. The request never left the client. */
     DNS("dns", Delivery.NOT_DELIVERED),
-    /** TLS handshake or certificate validation failed. No application data was sent. */
-    TLS("tls", Delivery.NOT_DELIVERED),
+    /**
+     * A TLS failure — handshake, certificate validation, or a protocol error mid-stream.
+     *
+     * <p>Delivery is {@link Delivery#UNKNOWN} rather than {@link Delivery#NOT_DELIVERED} because
+     * {@code SSLException} also covers failures raised while <em>reading the response</em>, which
+     * happen after the request was delivered. Distinguishing the handshake case would buy nothing:
+     * a TLS failure does not succeed on retry either way.
+     */
+    TLS("tls", Delivery.UNKNOWN),
     /** Connection refused, unreachable, or the connect phase timed out. */
     CONNECT("connect", Delivery.NOT_DELIVERED),
     /** Timed out waiting for the response; the request may already have been sent. */
@@ -60,13 +75,13 @@ public enum FailureType {
     private final Delivery delivery;
 
     /**
-     * Whether the request is known to have reached the server. Drives the only decision that
-     * usually depends on the failure category: whether a non-idempotent call may be retried.
+     * What the transport observed about whether the request reached the server. This is evidence for
+     * a retry decision, never the decision itself — see the note on {@link FailureType}.
      */
     public enum Delivery {
-        /** The request never reached the server; retrying is safe even for non-idempotent calls. */
+        /** The request is not believed to have reached the server. */
         NOT_DELIVERED,
-        /** The server received the request; retrying a non-idempotent call may duplicate it. */
+        /** The server received the request; re-running a non-idempotent call may duplicate it. */
         DELIVERED,
         /** Cannot be determined from the exception. Treat as possibly delivered. */
         UNKNOWN

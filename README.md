@@ -65,7 +65,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:3.2.0'
+    implementation 'com.github.skaca8:mido-client:3.2.1'
 }
 ```
 
@@ -83,7 +83,7 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>3.2.0</version>
+    <version>3.2.1</version>
 </dependency>
 ```
 
@@ -94,7 +94,7 @@ dependencies {
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:3.2.0'
+implementation 'io.github.skaca8:mido-client:3.2.1'
 ```
 
 **Maven**
@@ -104,7 +104,7 @@ implementation 'io.github.skaca8:mido-client:3.2.0'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>3.2.0</version>
+    <version>3.2.1</version>
 </dependency>
 ```
 
@@ -584,20 +584,42 @@ elapsedMs: 3011, failureType: timeout, delivery: UNKNOWN, exception: java.net.So
 
 ```java
 catch (RestClientException e) {
-    if (FailureType.classify(e).getDelivery() == FailureType.Delivery.NOT_DELIVERED) {
-        retry();   // the request never reached the server — safe even when not idempotent
-    }
+    log.warn("payment call failed: {}", FailureType.classify(e));
+    throw toDomainFailure(e);
 }
 ```
 
-| `failureType`                     | `delivery`      | Meaning                                       |
-|-----------------------------------|-----------------|-----------------------------------------------|
-| `dns`                             | `NOT_DELIVERED` | Host name did not resolve                     |
-| `tls`                             | `NOT_DELIVERED` | Handshake / certificate failure                |
-| `connect`                         | `NOT_DELIVERED` | Refused, unreachable, or connect timeout      |
-| `timeout`                         | `UNKNOWN`       | Timed out; may or may not have been sent      |
-| `client-error` / `server-error`   | `DELIVERED`     | Server answered 4xx / 5xx                     |
-| `unknown`                         | `UNKNOWN`       | Nothing matched                               |
+| `failureType`                     | `delivery`      | Meaning                                              |
+|-----------------------------------|-----------------|------------------------------------------------------|
+| `dns`                             | `NOT_DELIVERED` | Host name did not resolve                            |
+| `connect`                         | `NOT_DELIVERED` | Refused, unreachable, or connect timeout             |
+| `tls`                             | `UNKNOWN`       | Handshake, certificate, or mid-stream protocol failure |
+| `timeout`                         | `UNKNOWN`       | Timed out; may or may not have been processed        |
+| `client-error` / `server-error`   | `DELIVERED`     | Server answered 4xx / 5xx                            |
+| `unknown`                         | `UNKNOWN`       | Nothing matched                                      |
+
+⚠️ **`delivery` is an observation, not a retry policy.** "Did the request reach the server" and "is re-running this operation safe" are different questions, and only the first one is answerable from an exception. Three things worth keeping separate:
+
+| | Question | Answered by |
+|---|---|---|
+| Delivery | Did the request reach the server? | `FailureType` |
+| Retry safety | Can this operation be re-run? | The operation's own semantics |
+| Idempotency | What makes re-running harmless? | An idempotency key, server-side |
+
+A non-idempotent call — a payment authorization, say — **needs an idempotency key regardless of what this classifier returns**, because `UNKNOWN` is a frequent and unavoidable answer. `read-timeout-seconds` is a whole-exchange deadline, so `timeout` routinely means "the server processed it but the response was too slow". `tls` is `UNKNOWN` for the same reason: `SSLException` also covers failures raised while reading the response, after the request was delivered.
+
+Treating `NOT_DELIVERED` as "safe to retry" is the mistake this API most invites. It holds only for operations that were already safe to re-run.
+
+Where it does pay off is declarative retry configuration, since `Predicate<Throwable>` needs no dependency beyond the JDK:
+
+```java
+RetryConfig.custom()
+        // only retry what provably never reached the server
+        .retryOnException(e -> FailureType.classify(e).getDelivery() == FailureType.Delivery.NOT_DELIVERED)
+        .build();
+```
+
+Widen that to `!= DELIVERED` only for operations that are idempotent, whether by nature or by key.
 
 A connect timeout arrives as `HttpConnectTimeoutException` and is classified as `connect` (not delivered); a response timeout arrives as `HttpTimeoutException` and stays `timeout` (delivery unknown), because the request may already have been sent.
 

@@ -7,6 +7,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 
+import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLHandshakeException;
 import java.io.IOException;
 import java.net.ConnectException;
@@ -29,11 +30,26 @@ class FailureTypeTest {
     }
 
     @Test
-    void shouldClassifyTlsFailure() {
+    void shouldClassifyTlsFailureWithUnknownDelivery() {
+        // SSLException은 핸드셰이크(전송 전)뿐 아니라 응답을 읽는 중(전송 후)에도 발생한다.
+        // 둘을 구분할 수 없으므로 NOT_DELIVERED로 단정하지 않는다 — 잘못된 단정은 중복 결제로 이어진다.
         assertThat(FailureType.classify(new SSLHandshakeException("bad cert")))
                 .isEqualTo(FailureType.TLS)
                 .extracting(FailureType::getDelivery)
-                .isEqualTo(FailureType.Delivery.NOT_DELIVERED);
+                .isEqualTo(FailureType.Delivery.UNKNOWN);
+
+        assertThat(FailureType.classify(new SSLException("truncated record while reading response")))
+                .isEqualTo(FailureType.TLS)
+                .extracting(FailureType::getDelivery)
+                .isEqualTo(FailureType.Delivery.UNKNOWN);
+    }
+
+    @Test
+    void shouldNeverClaimNotDeliveredForAFailureThatCanHappenAfterDelivery() {
+        // NOT_DELIVERED는 "전송 전에만 발생 가능한" 실패에만 붙어야 한다.
+        assertThat(FailureType.TLS.getDelivery()).isNotEqualTo(FailureType.Delivery.NOT_DELIVERED);
+        assertThat(FailureType.TIMEOUT.getDelivery()).isNotEqualTo(FailureType.Delivery.NOT_DELIVERED);
+        assertThat(FailureType.UNKNOWN.getDelivery()).isNotEqualTo(FailureType.Delivery.NOT_DELIVERED);
     }
 
     @Test

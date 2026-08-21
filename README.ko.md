@@ -62,7 +62,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:3.2.0'
+    implementation 'com.github.skaca8:mido-client:3.2.1'
 }
 ```
 
@@ -80,7 +80,7 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>3.2.0</version>
+    <version>3.2.1</version>
 </dependency>
 ```
 
@@ -91,7 +91,7 @@ dependencies {
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:3.2.0'
+implementation 'io.github.skaca8:mido-client:3.2.1'
 ```
 
 **Maven**
@@ -101,7 +101,7 @@ implementation 'io.github.skaca8:mido-client:3.2.0'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>3.2.0</version>
+    <version>3.2.1</version>
 </dependency>
 ```
 
@@ -574,20 +574,42 @@ elapsedMs: 3011, failureType: timeout, delivery: UNKNOWN, exception: java.net.So
 
 ```java
 catch (RestClientException e) {
-    if (FailureType.classify(e).getDelivery() == FailureType.Delivery.NOT_DELIVERED) {
-        retry();   // 서버에 도달하지 않았으므로 비멱등 요청도 재시도 가능
-    }
+    log.warn("결제 호출 실패: {}", FailureType.classify(e));
+    throw toDomainFailure(e);
 }
 ```
 
-| `failureType`                     | `delivery`      | 의미                        |
-|-----------------------------------|-----------------|---------------------------|
-| `dns`                             | `NOT_DELIVERED` | 호스트명 해석 실패                |
-| `tls`                             | `NOT_DELIVERED` | 핸드셰이크·인증서 실패              |
-| `connect`                         | `NOT_DELIVERED` | 연결 거부·도달 불가·connect 타임아웃  |
-| `timeout`                         | `UNKNOWN`       | 타임아웃, 전송 여부 판단 불가         |
-| `client-error` / `server-error`   | `DELIVERED`     | 서버가 4xx / 5xx로 응답         |
-| `unknown`                         | `UNKNOWN`       | 매칭되는 분류 없음                |
+| `failureType`                     | `delivery`      | 의미                             |
+|-----------------------------------|-----------------|--------------------------------|
+| `dns`                             | `NOT_DELIVERED` | 호스트명 해석 실패                     |
+| `connect`                         | `NOT_DELIVERED` | 연결 거부·도달 불가·connect 타임아웃       |
+| `tls`                             | `UNKNOWN`       | 핸드셰이크·인증서·스트림 도중 프로토콜 실패       |
+| `timeout`                         | `UNKNOWN`       | 타임아웃, 처리 여부 판단 불가              |
+| `client-error` / `server-error`   | `DELIVERED`     | 서버가 4xx / 5xx로 응답              |
+| `unknown`                         | `UNKNOWN`       | 매칭되는 분류 없음                     |
+
+⚠️ **`delivery`는 관측 결과이지 재시도 정책이 아닙니다.** "요청이 서버에 도달했는가"와 "이 작업을 다시 실행해도 되는가"는 다른 질문이고, 예외로 답할 수 있는 건 앞의 하나뿐입니다. 셋을 분리하세요.
+
+| | 질문 | 답하는 주체 |
+|---|---|---|
+| Delivery | 요청이 서버에 도달했는가? | `FailureType` |
+| 재시도 안전성 | 이 작업을 다시 실행해도 되는가? | 그 작업 자체의 의미 |
+| 멱등성 | 다시 실행해도 무해하게 만드는 것은? | 서버 측 멱등키 |
+
+비멱등 호출(예: 결제 승인)은 **이 분류자가 뭘 반환하든 멱등키가 필요합니다.** `UNKNOWN`은 흔하고 피할 수 없는 답이기 때문입니다. `read-timeout-seconds`가 교환 전체 데드라인이라 `timeout`은 "서버는 처리했는데 응답이 늦었다"인 경우가 흔합니다. `tls`가 `UNKNOWN`인 것도 같은 이유입니다 — `SSLException`은 요청이 전달된 뒤 응답을 읽는 중에 발생하는 실패까지 포함합니다.
+
+`NOT_DELIVERED`를 "재시도 안전"으로 읽는 것이 이 API가 가장 유발하기 쉬운 실수입니다. 그건 애초에 다시 실행해도 되는 작업에만 성립합니다.
+
+실제로 값을 하는 자리는 선언적 재시도 설정입니다. `Predicate<Throwable>`는 JDK 타입이라 추가 의존성이 없습니다.
+
+```java
+RetryConfig.custom()
+        // 서버에 도달하지 않았음이 확인된 경우만 재시도
+        .retryOnException(e -> FailureType.classify(e).getDelivery() == FailureType.Delivery.NOT_DELIVERED)
+        .build();
+```
+
+`!= DELIVERED`로 넓히는 것은 본래 멱등이거나 멱등키가 있는 작업에만 하세요.
 
 connect 타임아웃은 `HttpConnectTimeoutException`으로 도착해 `connect`(미도달)로 분류되고, 응답 타임아웃은 `HttpTimeoutException`으로 도착해 `timeout`(도달 여부 불명)으로 남습니다 — 요청이 이미 전송되었을 수 있기 때문입니다.
 

@@ -5,6 +5,52 @@ All notable changes to `mido-client` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.1] - 2026-08-21
+
+### Fixed
+
+- **`FailureType.TLS` no longer claims the request was not delivered.** Its `Delivery` changes from
+  `NOT_DELIVERED` to `UNKNOWN`. The classifier matched on `SSLException`, which covers a failed
+  handshake (before the request is sent) *and* a protocol failure raised while reading the response
+  (after it was sent and possibly processed). Labelling both `NOT_DELIVERED` invited exactly the
+  duplicate that label is supposed to prevent. Distinguishing the handshake case was considered and
+  rejected: a TLS failure does not succeed on retry either way, so the extra precision buys nothing.
+  The enum's shape is unchanged, so this is source-compatible; only the meaning is now safe.
+
+### Changed
+
+- **The `FailureType` documentation no longer tells you to retry on `NOT_DELIVERED`.** The previous
+  example (`if (delivery == NOT_DELIVERED) retry();`) conflated three separate things: what the
+  transport observed, whether an operation may be re-run, and what makes re-running harmless. Only
+  the first is answerable from an exception. A non-idempotent call needs an idempotency key
+  regardless of the classification, because `UNKNOWN` is a frequent and unavoidable answer —
+  `read-timeout-seconds` is a whole-exchange deadline, so `timeout` routinely means "processed, but
+  the response was too slow". The README and javadoc now separate the three questions and show the
+  place where the classifier genuinely pays off: a `Predicate<Throwable>` for declarative retry
+  configuration (Resilience4j / Spring Retry), which needs no dependency beyond the JDK.
+
+### Corrected
+
+- **The rationale given in 3.0.0 for not wrapping exceptions was partly wrong.** That release
+  argued, in the changelog and in the commit message for `FailureType`, that wrapping transport
+  exceptions in a library type would break Resilience4j and Spring Retry exception matching. Stated
+  that broadly, it is false. It holds only for wrapping *inside* the interceptor chain — where the
+  logging interceptor sits, and where a Resilience4j interceptor placed outermost would indeed
+  observe the wrapper instead of the original. Wrapping *outside* the whole chain avoids it entirely,
+  and this library already has two places that could do so: `BaseExternalApi.withDefaultChannelAction`
+  and `ChannelActionAspect`, both of which wrap the caller's invocation rather than sitting in the
+  chain.
+
+  The decision not to wrap stands, but on the narrower argument: wrapping changes the *identity* of
+  the exception, so `catch (SocketTimeoutException ...)` and
+  `retryOnException(e -> e instanceof HttpTimeoutException)` stop matching, even though a wrapper
+  extending `ResourceAccessException` would keep `catch (RestClientException ...)` working. That is a
+  real compatibility cost to impose as a library's default behavior, and it is the reason —
+  not the Resilience4j claim.
+
+  Opt-in wrapping behind a property was considered and rejected: it doubles the behavioral surface
+  of every future change, which is the same reason the `client-type` switch was removed in 3.0.0.
+
 ## [3.2.0] - 2026-08-21
 
 ### Added
