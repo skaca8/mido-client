@@ -5,6 +5,34 @@ All notable changes to `mido-client` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Startup validation of `@ChannelAction` usage, including self-invocation detection.** 3.1.0 shipped
+  the annotations with their proxy limits documented; documentation does not stop anyone from hitting
+  them. A `ChannelActionValidator` now inspects every bean carrying `@ChannelAction` once the
+  singletons exist.
+
+  Fatal, because the advice provably cannot apply: `@ChannelAction` on a class without
+  `@ChannelName`, on a `private` or `static` method (never matched by the `@annotation` pointcut), or
+  on a `final` method (CGLIB cannot override it). Previously the first of these surfaced on the first
+  call and the other two never surfaced at all.
+
+  Warned about, not fatal: a call to an annotated method from an unannotated method of the same class
+  — the self-invocation that bypasses the proxy. Detected by reading the class bytes with the ASM
+  already inside spring-core, so no dependency is added. The bytecode cannot prove the receiver is
+  `this` rather than another instance of the same type, so failing startup would occasionally be
+  wrong; a call from a method that is itself annotated is not reported, since the context is already
+  bound. Any failure inside the scan degrades to "no findings" and never breaks startup.
+
+  Also warned about: `@ChannelAction` used with no AspectJ runtime on the classpath, which previously
+  gave no feedback at all.
+
+  **Upgrade note:** an application that already has a `private`, `static`, or `final`
+  `@ChannelAction` method will now fail to start. Those annotations were doing nothing, so the fix is
+  to remove them or make the method proxyable — but the failure is new.
+
 ## [3.1.0] - 2026-08-21
 
 ### Added

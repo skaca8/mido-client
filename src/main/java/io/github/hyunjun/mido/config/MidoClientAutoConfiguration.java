@@ -1,7 +1,9 @@
 package io.github.hyunjun.mido.config;
 
 import io.github.hyunjun.mido.aop.ChannelActionAspect;
+import io.github.hyunjun.mido.aop.ChannelActionValidator;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -36,6 +38,20 @@ public class MidoClientAutoConfiguration {
     public MidoClientFactory midoClientFactory(MidoClientProperties midoClientProperties) {
         log.info("Mido Client Auto Configuration enabled with {} channels", midoClientProperties.getChannels().size());
         return new MidoClientFactory(midoClientProperties);
+    }
+
+    /**
+     * Reports {@code @ChannelAction} usage that cannot take effect. Registered unconditionally — a
+     * missing AOP runtime is itself one of the things worth warning about, so this must not be gated
+     * on AspectJ being present.
+     *
+     * @param beanFactory factory whose bean definitions are inspected after startup
+     * @return the validator bean
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ChannelActionValidator midoChannelActionValidator(ListableBeanFactory beanFactory) {
+        return new ChannelActionValidator(beanFactory);
     }
 
     /**

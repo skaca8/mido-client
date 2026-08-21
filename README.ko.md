@@ -499,15 +499,30 @@ public class PaymentAdapter {
 implementation 'org.springframework.boot:spring-boot-starter-aop'
 ```
 
-**`@ChannelName` 누락은 시끄럽게 실패합니다.** `@ChannelName` 없는 클래스에 `@ChannelAction`을 붙이면 클래스명과 메서드명을 담은 `IllegalStateException`이 납니다 — 조용히 `unknown`으로 흘러가지 않습니다. 다만 기동 시점이 아니라 첫 호출에서 드러납니다. 애스펙트는 자신이 호출되지 않은 빈을 알 수 없습니다.
+⚠️ **프록시 기반이라 알려진 한계가 있습니다.** 어드바이스는 Spring 프록시를 통한 외부 호출에서만 동작합니다. 같은 빈의 다른 메서드에서의 호출(self-invocation), `private`/`static`/`final` 메서드, Spring 빈이 아닌 객체에는 **적용되지 않습니다.** 이 경우 액션이 바인딩되지 않고 로그에 `unknown`이 찍힙니다 — 애노테이션이 붙어 있다는 게 적용되었다는 증거가 아닙니다.
 
-⚠️ **프록시 기반이라 알려진 한계가 있습니다.** 어드바이스는 Spring 프록시를 통한 외부 호출에서만 동작합니다. 다음에는 **적용되지 않습니다.**
+**그래서 mido-client가 기동 시점에 검사합니다.** 운영에서 `channelAction: unknown`을 눈치채기를 기다리지 않습니다. 싱글턴이 모두 생성된 뒤 `@ChannelAction`을 가진 모든 빈을 검사합니다.
 
-- 같은 빈의 다른 메서드에서 호출 (self-invocation)
-- `private` 또는 `final` 메서드
-- Spring 빈이 아닌 객체
+| 발견 | 결과 |
+|---|---|
+| `@ChannelName` 없는 클래스의 `@ChannelAction` | **기동 실패** |
+| `private` 또는 `static` 메서드의 `@ChannelAction` | **기동 실패** — `@annotation` 포인트컷이 절대 매치하지 않음 |
+| `final` 메서드의 `@ChannelAction` | **기동 실패** — CGLIB이 오버라이드 불가 |
+| 같은 클래스의 애노테이션 없는 메서드에서 애노테이션 메서드 호출 | **경고**, 호출자·피호출자 명시 |
+| AspectJ 런타임 없이 `@ChannelAction` 사용 | **경고** — 애노테이션이 무동작 |
 
-이 경우 액션이 바인딩되지 않고 로그에 `unknown`이 찍힙니다. **애노테이션이 붙어 있다는 게 적용되었다는 증거가 아닙니다** — 선언적 방식이 람다보다 나쁜 유일한 지점입니다. 람다는 빠뜨리면 코드에서 보입니다. 중요한 경로에는 `ChannelContext.callWithChannelAction(...)`이나 `BaseExternalApi`를 계속 쓰세요.
+앞의 세 가지는 어드바이스가 적용될 수 없음이 증명되므로 치명적으로 처리합니다. 경고로 남기면 같은 조용한 실패를 늦게 겪는 것뿐입니다.
+
+self-invocation은 **경고만** 냅니다. 클래스 바이트코드를 읽어(spring-core에 이미 들어있는 ASM 사용 — 새 의존성 없음) 같은 클래스의 애노테이션 없는 메서드가 애노테이션 메서드를 호출하는지 찾습니다. 바이트코드만으로는 수신자가 `this`인지 같은 타입의 다른 인스턴스인지 증명할 수 없어서, 기동을 막으면 간혹 틀립니다. 호출하는 쪽도 애노테이션이 붙어 있으면 보고하지 않습니다 — 컨텍스트가 이미 바인딩되어 있어 우회가 무해합니다. 스캔 중 실패(클래스 파일 없음, ASM 불일치)는 "발견 없음"으로 떨어지며 기동을 막지 않습니다.
+
+```
+WARN  @ChannelAction on PaymentAdapter#getStatus is bypassed when called from PaymentAdapter#refresh —
+      a self-invocation does not go through the Spring proxy, so channelAction will be 'unknown' for
+      that path. Call it through an injected reference, or bind explicitly with
+      ChannelContext.callWithChannelAction(...).
+```
+
+스캔이 볼 수 없는 것: Spring 빈이 아닌 클래스, 리플렉션이나 프로그래매틱 프록시 경로. 애스펙트가 `@ChannelName` 누락에 대한 자체 런타임 가드를 유지하는 이유입니다.
 
 중첩은 안전합니다. `ChannelContext`가 이전 MDC 값을 저장·복원하므로, 이미 바인딩된 액션 안에서 애노테이션 메서드를 호출해도 반환 후 바깥 액션이 정상 복원됩니다.
 
@@ -520,7 +535,7 @@ implementation 'org.springframework.boot:spring-boot-starter-aop'
 | 보일러플레이트 | 없음 | 호출당 람다 하나 |
 | `spring-boot-starter-aop` 필요 | 필요 | 불필요 |
 | self-invocation, `private`/`final`, 비빈에서 동작 | 안 됨 | 됨 |
-| 바인딩 누락이 코드에서 보이는지 | 안 보임 | 보임 |
+| 바인딩 누락이 코드에서 보이는지 | 안 보이지만 기동 시 잡힘 | 보임 |
 
 둘 다 지원되며 함께 쓸 수 있습니다. `BaseExternalApi`는 deprecated가 아닙니다. 평범한 어댑터 빈에는 애노테이션을, 프록시가 닿지 않는 곳이나 호출 지점에서 바인딩을 명시하고 싶은 곳에는 명시적 방식을 쓰세요.
 

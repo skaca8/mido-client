@@ -4,6 +4,8 @@ import io.github.hyunjun.mido.annotation.ChannelAction;
 import io.github.hyunjun.mido.annotation.ChannelName;
 import io.github.hyunjun.mido.config.MidoClientAutoConfiguration;
 import io.github.hyunjun.mido.context.ChannelContext;
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.reflect.MethodSignature;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.aop.AopAutoConfiguration;
@@ -17,6 +19,8 @@ import java.io.IOException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ChannelActionAspectTest {
 
@@ -91,16 +95,21 @@ class ChannelActionAspectTest {
     }
 
     @Test
-    void shouldFailLoudlyWhenChannelNameIsMissing() {
-        // 조용히 "unknown"으로 흘러가지 않고 클래스·메서드를 담은 예외로 실패해야 한다
-        contextRunner.withUserConfiguration(MissingChannelNameConfig.class).run(context -> {
-            MissingChannelNameBean bean = context.getBean(MissingChannelNameBean.class);
+    void shouldFailLoudlyWhenChannelNameIsMissing() throws Exception {
+        // ChannelActionValidator가 기동 시점에 잡으므로, 어드바이스의 런타임 가드는 컨텍스트 없이 직접 검증한다.
+        // 가드를 두 겹으로 두는 이유: 검증기는 빈 정의만 볼 수 있어서 프로그래매틱하게 프록시된 비빈 객체는 못 본다.
+        MissingChannelNameBean target = new MissingChannelNameBean();
+        MethodSignature signature = mock(MethodSignature.class);
+        when(signature.getMethod()).thenReturn(MissingChannelNameBean.class.getMethod("readWithoutChannelName"));
 
-            assertThatThrownBy(bean::readWithoutChannelName)
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining(MissingChannelNameBean.class.getName() + "#readWithoutChannelName")
-                    .hasMessageContaining("requires @ChannelName");
-        });
+        ProceedingJoinPoint joinPoint = mock(ProceedingJoinPoint.class);
+        when(joinPoint.getTarget()).thenReturn(target);
+        when(joinPoint.getSignature()).thenReturn(signature);
+
+        assertThatThrownBy(() -> new ChannelActionAspect().bindChannelAction(joinPoint))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(MissingChannelNameBean.class.getName() + "#readWithoutChannelName")
+                .hasMessageContaining("requires @ChannelName");
     }
 
     @Test
@@ -142,14 +151,6 @@ class ChannelActionAspectTest {
         @Bean
         AnnotatedBean annotatedBean() {
             return new AnnotatedBean();
-        }
-    }
-
-    @Configuration(proxyBeanMethods = false)
-    static class MissingChannelNameConfig {
-        @Bean
-        MissingChannelNameBean missingChannelNameBean() {
-            return new MissingChannelNameBean();
         }
     }
 

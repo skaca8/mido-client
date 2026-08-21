@@ -509,15 +509,30 @@ The two axes are split on purpose: the channel is a property of the class (*whic
 implementation 'org.springframework.boot:spring-boot-starter-aop'
 ```
 
-**A missing `@ChannelName` fails loudly.** `@ChannelAction` on a class without `@ChannelName` throws `IllegalStateException` naming the class and method, rather than silently falling back to `unknown`. The failure surfaces on first call, not at startup — the aspect cannot know about beans it has not been invoked on.
+⚠️ **Proxy-based, with the usual limits.** The advice runs only on external calls through the Spring proxy. It does **not** apply to a call from another method of the same bean (self-invocation), to `private` / `static` / `final` methods, or to objects that are not Spring beans. In those cases the action is simply not bound and the log shows `unknown` — the annotation being present is not proof that it took effect.
 
-⚠️ **Proxy-based, with the usual limits.** The advice runs only on external calls through the Spring proxy. It does **not** apply to:
+**So mido-client checks for it at startup** instead of leaving you to notice `channelAction: unknown` in production. Once all singletons exist, every bean carrying `@ChannelAction` is inspected:
 
-- a call from another method of the same bean (self-invocation)
-- `private` or `final` methods
-- objects that are not Spring beans
+| Finding | Result |
+|---|---|
+| `@ChannelAction` on a class without `@ChannelName` | **startup failure** |
+| `@ChannelAction` on a `private` or `static` method | **startup failure** — never matched by the `@annotation` pointcut |
+| `@ChannelAction` on a `final` method | **startup failure** — CGLIB cannot override it |
+| An annotated method called from an unannotated method of the same class | **warning**, naming caller and callee |
+| `@ChannelAction` used with no AspectJ runtime on the classpath | **warning** — the annotations do nothing |
 
-In those cases the action is simply not bound and the log shows `unknown`. **The annotation being present is not proof that it took effect** — this is the one way the declarative form is worse than the lambda, where a missing wrapper is visible in the code. For paths where it matters, keep using `ChannelContext.callWithChannelAction(...)` or `BaseExternalApi`.
+The first three are fatal because the advice provably cannot apply; leaving them as warnings would just be a slower version of the same silent failure.
+
+Self-invocation is only a **warning**. It is found by reading the class bytes (via the ASM already inside spring-core — no new dependency) and looking for calls to an annotated method from an unannotated one in the same class. The bytecode cannot prove the receiver is `this` rather than another instance of the same type, so failing startup on it would occasionally be wrong. A call from a method that is *itself* annotated is not reported: the context is already bound, so bypassing the proxy changes nothing. Any failure inside the scan (unreadable class file, ASM mismatch) degrades to "no findings" and never breaks startup.
+
+```
+WARN  @ChannelAction on PaymentAdapter#getStatus is bypassed when called from PaymentAdapter#refresh —
+      a self-invocation does not go through the Spring proxy, so channelAction will be 'unknown' for
+      that path. Call it through an injected reference, or bind explicitly with
+      ChannelContext.callWithChannelAction(...).
+```
+
+What the scan cannot see: classes that are not Spring beans, and reflective or programmatically proxied call paths. The aspect keeps its own runtime guard for the missing-`@ChannelName` case to cover those.
 
 Nesting is safe: `ChannelContext` saves and restores the previous MDC value, so an annotated method called inside another bound action correctly exposes the outer action again once it returns.
 
@@ -530,7 +545,7 @@ The aspect runs at `Ordered.HIGHEST_PRECEDENCE + 100`, outside `@Transactional`,
 | Boilerplate | None | A lambda per call |
 | Needs `spring-boot-starter-aop` | Yes | No |
 | Works on self-invocation, `private`/`final`, non-beans | No | Yes |
-| Missing binding is visible in code | No | Yes |
+| Missing binding is visible in code | No, but caught at startup | Yes |
 
 Both are supported and interoperate; `BaseExternalApi` is not deprecated. Use the annotations for straightforward adapter beans, and the explicit form where proxying does not reach or where you want the binding visible at the call site.
 
