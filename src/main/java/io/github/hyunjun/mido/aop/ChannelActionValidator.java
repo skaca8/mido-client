@@ -6,7 +6,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.boot.autoconfigure.AutoConfigurationPackages;
+import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
 import org.springframework.core.annotation.AnnotatedElementUtils;
+import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.util.ClassUtils;
 
 import java.lang.reflect.Method;
@@ -61,6 +65,56 @@ public class ChannelActionValidator implements SmartInitializingSingleton {
         }
 
         annotatedClasses.forEach(this::validate);
+        warnAboutAnnotatedNonBeans();
+    }
+
+    /**
+     * Warns about classes annotated {@link ChannelName} that are not Spring beans. Bean definitions
+     * are all {@link #afterSingletonsInstantiated()} can otherwise see, so a manually instantiated
+     * adapter would never be checked at all — its annotations are inert and nothing says so.
+     *
+     * <p>Scans only the application's own auto-configuration packages, and only for the class-level
+     * {@link ChannelName}: a class with {@link ChannelAction} but no {@link ChannelName} is already
+     * fatal for beans, and a non-bean carrying neither is not our business. Abstract classes and
+     * interfaces are skipped by the scanner's default candidate rules, which matters because
+     * {@link ChannelName} is {@code @Inherited} and an abstract base carrying it is a legitimate
+     * pattern.
+     *
+     * <p>A warning rather than a failure: instantiating such a class deliberately and binding the
+     * context by hand is valid, just not what the annotation does.
+     */
+    private void warnAboutAnnotatedNonBeans() {
+        if (!AutoConfigurationPackages.has(beanFactory)) return;
+
+        ClassPathScanningCandidateComponentProvider scanner =
+                new ClassPathScanningCandidateComponentProvider(false);
+        scanner.addIncludeFilter(new AnnotationTypeFilter(ChannelName.class));
+
+        for (String basePackage : AutoConfigurationPackages.get(beanFactory)) {
+            for (BeanDefinition candidate : scanner.findCandidateComponents(basePackage)) {
+                warnIfNotABean(candidate.getBeanClassName());
+            }
+        }
+    }
+
+    private void warnIfNotABean(String className) {
+        if (className == null) return;
+
+        Class<?> candidateType;
+        try {
+            candidateType = ClassUtils.forName(className, ClassUtils.getDefaultClassLoader());
+        } catch (ClassNotFoundException | LinkageError e) {
+            log.trace("Skipping '{}' during @ChannelName scan: {}", className, e.toString());
+            return;
+        }
+
+        // allowEagerInit=false — 검증 때문에 빈이 조기 초기화되면 안 된다.
+        if (beanFactory.getBeanNamesForType(candidateType, true, false).length == 0) {
+            log.warn("{} is annotated @ChannelName but is not a Spring bean, so its @ChannelAction "
+                            + "methods are never advised and channelAction will be 'unknown'. Register it as a "
+                            + "bean, or bind explicitly with ChannelContext.callWithChannelAction(...).",
+                    candidateType.getName());
+        }
     }
 
     private List<Class<?>> findClassesWithChannelActions() {

@@ -6,12 +6,16 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.github.hyunjun.mido.annotation.ChannelAction;
 import io.github.hyunjun.mido.annotation.ChannelName;
+import io.github.hyunjun.mido.aop.scanfixture.AbstractBaseAdapter;
+import io.github.hyunjun.mido.aop.scanfixture.RegisteredAdapter;
+import io.github.hyunjun.mido.aop.scanfixture.UnregisteredAdapter;
 import io.github.hyunjun.mido.config.MidoClientAutoConfiguration;
 import io.github.hyunjun.mido.context.ChannelContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.AutoConfigurationPackage;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.aop.AopAutoConfiguration;
 import org.springframework.boot.test.context.FilteredClassLoader;
@@ -133,6 +137,46 @@ class ChannelActionValidatorTest {
     }
 
     @Test
+    void shouldWarnAboutAnnotatedClassThatIsNotABean() {
+        // 빈 정의만 훑으면 이 클래스는 아예 검사 대상에 들어오지 않는다 — 스캔이 잡아야 한다
+        contextRunner.withUserConfiguration(ScannedPackageConfig.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(warnings())
+                    .anySatisfy(message -> assertThat(message)
+                            .contains(UnregisteredAdapter.class.getName())
+                            .contains("is not a Spring bean"));
+        });
+    }
+
+    @Test
+    void shouldNotWarnAboutAnnotatedClassThatIsABean() {
+        contextRunner.withUserConfiguration(ScannedPackageConfig.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(warnings()).noneSatisfy(message ->
+                    assertThat(message).contains(RegisteredAdapter.class.getName()));
+        });
+    }
+
+    @Test
+    void shouldNotWarnAboutAnAbstractAnnotatedBaseClass() {
+        // @ChannelName은 @Inherited라 추상 베이스가 채널을 선언하는 건 정당하다. 빈이 될 수 없으니 오탐이면 안 된다.
+        contextRunner.withUserConfiguration(ScannedPackageConfig.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(warnings()).noneSatisfy(message ->
+                    assertThat(message).contains(AbstractBaseAdapter.class.getName()));
+        });
+    }
+
+    @Test
+    void shouldNotScanWhenApplicationPackagesAreUnknown() {
+        // @AutoConfigurationPackage가 없으면(라이브러리 단독 테스트 등) 스캔할 기준 패키지가 없다 — 조용히 건너뛴다
+        contextRunner.withUserConfiguration(CleanConfig.class).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(warnings()).isEmpty();
+        });
+    }
+
+    @Test
     void shouldStayQuietWhenNoChannelActionIsUsed() {
         contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
@@ -157,6 +201,16 @@ class ChannelActionValidatorTest {
                 .filter(event -> event.getLevel() == Level.WARN)
                 .map(ILoggingEvent::getFormattedMessage)
                 .toList();
+    }
+
+    /** scanfixture 패키지만 스캔 범위로 등록해 다른 테스트의 픽스처가 섞이지 않게 한다. */
+    @Configuration(proxyBeanMethods = false)
+    @AutoConfigurationPackage(basePackageClasses = RegisteredAdapter.class)
+    static class ScannedPackageConfig {
+        @Bean
+        RegisteredAdapter registeredAdapter() {
+            return new RegisteredAdapter();
+        }
     }
 
     @Configuration(proxyBeanMethods = false)

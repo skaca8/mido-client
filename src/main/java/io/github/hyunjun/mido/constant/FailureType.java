@@ -44,12 +44,21 @@ import java.net.http.HttpTimeoutException;
  * as {@link #CONNECT} while the latter stays {@link #TIMEOUT} with {@link Delivery#UNKNOWN}. Note
  * that {@code read-timeout-seconds} is a whole-exchange deadline, so a {@link #TIMEOUT} routinely
  * means "the server processed the request but the response did not arrive in time".
+ *
+ * <p><strong>Redirects narrow what {@link Delivery#NOT_DELIVERED} asserts.</strong> The transport
+ * follows redirects, and for {@code 307}/{@code 308} it re-sends the original method and body to the
+ * new location. So a {@link #DNS} or {@link #CONNECT} failure can occur on a later hop, after an
+ * earlier host was already reached. What {@link Delivery#NOT_DELIVERED} means is therefore "the
+ * request was not delivered to the host that failed" — every host reached before it answered with a
+ * redirect rather than performing the operation. That is the normal case, but it rests on the server
+ * behaving correctly: a server that acts on a request and <em>then</em> redirects would make the
+ * label wrong. The classifier cannot see the redirect chain, so it cannot detect that.
  */
 @Getter
 @RequiredArgsConstructor
 public enum FailureType {
 
-    /** Host name could not be resolved. The request never left the client. */
+    /** Host name could not be resolved, so no connection to it was made. */
     DNS("dns", Delivery.NOT_DELIVERED),
     /**
      * A TLS failure — handshake, certificate validation, or a protocol error mid-stream.
@@ -60,7 +69,7 @@ public enum FailureType {
      * a TLS failure does not succeed on retry either way.
      */
     TLS("tls", Delivery.UNKNOWN),
-    /** Connection refused, unreachable, or the connect phase timed out. */
+    /** Connection refused, unreachable, or the connect phase timed out, so nothing was sent to it. */
     CONNECT("connect", Delivery.NOT_DELIVERED),
     /** Timed out waiting for the response; the request may already have been sent. */
     TIMEOUT("timeout", Delivery.UNKNOWN),
