@@ -28,7 +28,7 @@
 - **4단계 로깅** — `off` / `console` / `file` / `all`, 요청/응답 바디, URL, 응답시간 포함
 - **엔드포인트별 인증** — Bearer, Basic, API Key 방식 지원
 - **스마트 인코딩 감지** — Content-Type 헤더 → UTF-8 유효성 검사 → 채널 기본값 순으로 자동 결정
-- **커스텀 인터셉터** — `ClientHttpRequestInterceptor` 구현체를 YAML에 클래스명으로 등록
+- **커스텀 인터셉터** — `ClientHttpRequestInterceptor` 구현체를 YAML에 Spring 빈 이름(의존성 주입 가능) 또는 클래스명으로 등록
 - **채널별 커넥션 격리** — 채널/엔드포인트마다 독립된 `java.net.http.HttpClient`를 가지므로 포화된 채널이 다른 채널을 굶기지 않음, HTTP/2 지원
 - **채널별 gzip 압축** — 요청 바디는 `min-size` 임계값 이상일 때만 압축, 응답은 자동 해제 + 압축 폭탄 방어 cap(`max-decompressed-size`)
 - **채널별 컨텐트 타입** — `json`(기본) / `xml` 중 채널 단위로 선택, 요청 `Content-Type` 헤더가 자동 설정됨
@@ -62,7 +62,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:3.2.1'
+    implementation 'com.github.skaca8:mido-client:3.3.0'
 }
 ```
 
@@ -80,7 +80,7 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>3.2.1</version>
+    <version>3.3.0</version>
 </dependency>
 ```
 
@@ -91,7 +91,7 @@ dependencies {
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:3.2.1'
+implementation 'io.github.skaca8:mido-client:3.3.0'
 ```
 
 **Maven**
@@ -101,7 +101,7 @@ implementation 'io.github.skaca8:mido-client:3.2.1'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>3.2.1</version>
+    <version>3.3.0</version>
 </dependency>
 ```
 
@@ -208,7 +208,7 @@ public class PaymentService extends BaseExternalApi {
 | `authorization.type`      | TokenType      | -         | `bearer` / `basic` / `api_key`                 |
 | `authorization.token`     | String         | -         | 인증 토큰 값                                        |
 | `headers`                 | List           | -         | 모든 요청에 고정으로 추가할 헤더 목록                          |
-| `interceptors`            | List\<String\> | -         | `ClientHttpRequestInterceptor` 구현체의 전체 클래스명 목록 |
+| `interceptors`            | List\<String\> | -         | `ClientHttpRequestInterceptor`의 Spring 빈 이름 또는 전체 클래스명, 실행 순서대로 |
 | `gzip.request`            | Boolean        | `false`   | 요청 바디 gzip 압축 (`Content-Encoding: gzip` 자동 추가) |
 | `gzip.response`           | Boolean        | `false`   | `Accept-Encoding: gzip` 강제 후 응답 자동 해제 |
 | `gzip.min-size`           | Integer        | `1024`    | 요청 바디가 이 크기 미만이면 압축 skip (bytes) |
@@ -235,19 +235,64 @@ public class PaymentService extends BaseExternalApi {
 빈 검증 외에, `MidoClientFactory` 빈이 기동 시점에 다음을 확인합니다. 오타가 첫 요청까지 숨어 있지 않습니다.
 
 - `charset`이 알 수 없는 문자셋 → `Invalid charset '<name>' for channel: <channel>`
-- `interceptors[]` 항목을 로드할 수 없거나, `ClientHttpRequestInterceptor` 미구현이거나, public 무인자 생성자가 없음 → 메시지에 채널명과 엔드포인트가 함께 표시됨
+- `interceptors[]` 항목이 등록된 빈 이름도, 로드 가능한 클래스명도 아님 → 메시지에 채널명과 엔드포인트가 함께 표시됨
+- 항목이 지목한 빈의 타입이 `ClientHttpRequestInterceptor`를 구현하지 않음
+- 항목이 지목한 클래스가 `ClientHttpRequestInterceptor`를 구현하지 않거나, public 무인자 생성자도 없고 대신 쓸 빈도 없음
 
-이 검사에서 인터셉터 클래스는 로드·검사만 하고 **인스턴스는 만들지 않습니다.** 부수효과가 있는 생성자가 두 번 실행되지 않습니다.
+이 검사에서 **인스턴스는 만들지 않습니다.** 클래스명은 로드·검사만 하고, 빈 이름은 `containsBean` / `getType`으로 확인하므로 부수효과가 있는 생성자가 두 번 실행되지 않습니다.
 
 ## 고급 사용법
 
 ### 커스텀 인터셉터
 
-`ClientHttpRequestInterceptor`를 구현하고 YAML에 클래스명으로 등록합니다.
+`ClientHttpRequestInterceptor`를 구현하고 엔드포인트 아래에 나열합니다. 각 항목은 **Spring 빈 이름** 또는 **전체 클래스명**이며, YAML 순서가 실행 순서입니다.
+
+```yaml
+mido-client:
+  channels:
+    payment:
+      primary:
+        url: https://api.payment.com
+        interceptors:
+          - paymentMetricsInterceptor            # 빈 이름   → 컨테이너에서 가져온다
+          - com.example.RequestIdInterceptor     # 클래스명 → 리플렉션으로 생성한다
+```
+
+**빈 이름을 쓰면 의존성 주입이 됩니다.** 인터셉터를 빈으로 선언하고 필요한 것을 주입하세요.
 
 ```java
-
 @Component
+public class PaymentMetricsInterceptor implements ClientHttpRequestInterceptor {
+
+    private final MeterRegistry meterRegistry;
+
+    public PaymentMetricsInterceptor(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
+
+    @Override
+    public ClientHttpResponse intercept(HttpRequest request, byte[] body,
+                                        ClientHttpRequestExecution execution) throws IOException {
+        long start = System.nanoTime();
+        try {
+            return execution.execute(request, body);
+        } finally {
+            meterRegistry.timer("payment.latency").record(System.nanoTime() - start, NANOSECONDS);
+        }
+    }
+}
+```
+
+```yaml
+interceptors:
+  - paymentMetricsInterceptor
+```
+
+이전 버전이 안내했던 `static` 필드나 `ApplicationContextHolder` 우회는 더 이상 필요하지 않습니다.
+
+**클래스명 방식은 종전과 완전히 동일합니다.** 상태 없는 인터셉터는 빈으로 만들 필요가 없습니다.
+
+```java
 public class RequestIdInterceptor implements ClientHttpRequestInterceptor {
 
     @Override
@@ -259,21 +304,45 @@ public class RequestIdInterceptor implements ClientHttpRequestInterceptor {
 }
 ```
 
-```yaml
-interceptors:
-  - "com.example.RequestIdInterceptor"
+#### 해석 우선순위
+
+| 항목 | 해석 결과 |
+|---|---|
+| 등록된 빈 이름 | 그 빈 |
+| 로드 가능한 클래스명 + 그 타입의 빈이 정확히 1개 | 그 빈 |
+| 로드 가능한 클래스명 + 그 타입의 빈이 없음 | public 무인자 생성자로 리플렉션 생성 |
+| 로드 가능한 클래스명 + 그 타입의 빈이 2개 이상 | 리플렉션 생성 + 후보를 나열하는 경고 — 빈 이름으로 직접 지목하세요 |
+| 둘 다 아님 | 기동 시 `IllegalStateException` |
+
+> **3.2.x에서 올라올 때:** 클래스명을 지정했고 그 클래스가 **빈으로도 등록되어 있으면**, 이제 별개의 리플렉션 인스턴스가 아니라 그 빈을 씁니다. 대개 원했던 결과입니다 — 종전에는 작성한 `@Component`와 `mido-client`가 쓰는 객체가 서로 다른 인스턴스였습니다 — 그래도 동작 변경입니다. 종전 동작을 유지하려면 빈이 아닌 클래스의 클래스명을 지정하세요.
+
+#### 빈 조회는 첫 요청까지 지연됩니다
+
+인터셉터 빈은 `RestClient`를 만드는 시점에 **가져오지 않습니다.** 그 클라이언트의 첫 요청에서 해석하고 캐시합니다.
+
+최적화가 아니라 설계 제약입니다. `getOrCreateClient`는 보통 소비 측 생성자에서 호출됩니다.
+
+```java
+@Component
+@ChannelName("payment")
+public class PaymentAdapter {
+
+    private final RestClient client;
+
+    public PaymentAdapter(MidoClientFactory factory) {
+        this.client = factory.getOrCreateClient("payment");   // 아직 빈 생성 중이다
+    }
+}
 ```
 
-> 커스텀 인터셉터는 no-arg public 생성자(`Class.forName(...).getDeclaredConstructor().newInstance()`)로 인스턴스화됩니다. 이렇게 만들어진 객체는 **Spring이 관리하는 빈이 아니므로**, 생성자 주입은 물론 `@Autowired` 필드 주입도 동작하지 않습니다. 인터셉터에 `@Component`를 함께 붙이더라도 Spring이 만드는 빈은 *별개 인스턴스*이며, `mido-client`는 그 빈을 사용하지 않습니다.
->
-> 현실적으로 가능한 두 가지 패턴:
->
-> 1. **`static` 필드** — 상태 없는 인터셉터에 가장 깔끔합니다 (권장).
-> 2. **`ApplicationContextHolder` 우회** — 시작 시점에 `ApplicationContext`를 정적 필드에 보관해 두고 `intercept(...)` 내부에서 빈을 조회하는 방식. *권장 디자인이 아니며 escape hatch로만 사용*하세요.
->
-> "Spring 빈 이름으로 인터셉터 등록" 옵션은 다음 마이너 릴리스의 로드맵에 있습니다.
->
-> **Fail-fast 동작**: 클래스 로딩 실패, public no-arg 생성자 부재, `ClientHttpRequestInterceptor` 미구현 등은 `MidoClientFactory.getOrCreateClient(...)`의 첫 호출 시점에 채널 이름과 문제 클래스명을 포함한 `IllegalStateException`이 발생합니다.
+이 시점에 인터셉터 빈을 당기면 그 빈과 그것이 의존하는 것들이 생성 도중에 강제로 만들어져, 평범한 배선이 순환 참조로 바뀝니다. 지연하면 컨텍스트 리프레시가 끝난 뒤에 조회하므로, 인터셉터가 무엇에든 — `mido-client`를 쓰는 빈에조차 — 안전하게 의존할 수 있습니다.
+
+알아둘 결과가 두 가지 있습니다.
+
+- 채널이 이름을 적었다는 것만으로 인터셉터 빈이 만들어지지는 않습니다. 그 채널의 첫 요청에서 생깁니다(애플리케이션의 다른 곳에서 이미 필요했다면 그보다 먼저).
+- 전체 조회를 해야만 드러나는 오설정 — 빈은 존재하지만 생성에 실패하는 경우 — 은 기동이 아니라 그 첫 요청에서 드러납니다. 빈 부재, 클래스 부재, 타입 불일치는 기동에서 잡습니다.
+
+**fail-fast 동작**: 항목이 등록된 빈 이름도 로드 가능한 클래스명도 아니거나, 지목한 빈의 타입이 `ClientHttpRequestInterceptor`를 구현하지 않거나, 클래스명이 인터페이스를 구현하지 않고 쓸 수 있는 무인자 생성자도 없으면, 채널·엔드포인트·문제 항목을 담은 메시지와 함께 컨텍스트 기동이 실패합니다.
 
 ### 회복성 (Rate Limiter / Circuit Breaker / Retry)
 
@@ -510,6 +579,7 @@ implementation 'org.springframework.boot:spring-boot-starter-aop'
 | `final` 메서드의 `@ChannelAction` | **기동 실패** — CGLIB이 오버라이드 불가 |
 | 같은 클래스의 애노테이션 없는 메서드에서 애노테이션 메서드 호출 | **경고**, 호출자·피호출자 명시 |
 | AspectJ 런타임 없이 `@ChannelAction` 사용 | **경고** — 애노테이션이 무동작 |
+| 애플리케이션 패키지에 있는 `@ChannelName` 클래스가 Spring 빈이 아님 | **경고** — 애노테이션이 적용되지 않음 |
 
 앞의 세 가지는 어드바이스가 적용될 수 없음이 증명되므로 치명적으로 처리합니다. 경고로 남기면 같은 조용한 실패를 늦게 겪는 것뿐입니다.
 
@@ -522,7 +592,9 @@ WARN  @ChannelAction on PaymentAdapter#getStatus is bypassed when called from Pa
       ChannelContext.callWithChannelAction(...).
 ```
 
-스캔이 볼 수 없는 것: Spring 빈이 아닌 클래스, 리플렉션이나 프로그래매틱 프록시 경로. 애스펙트가 `@ChannelName` 누락에 대한 자체 런타임 가드를 유지하는 이유입니다.
+비빈 검사는 애플리케이션의 auto-configuration 패키지를 스캔해 클래스 레벨 `@ChannelName`을 찾습니다. 추상 클래스와 인터페이스는 제외합니다 — `@ChannelName`이 `@Inherited`라 추상 베이스가 채널을 선언하는 건 정당한 패턴이고 애초에 빈이 될 수 없습니다. 기동 실패가 아니라 경고인 이유는, 그 클래스를 의도적으로 직접 생성해서 컨텍스트를 수동 바인딩하는 것도 유효하기 때문입니다 — 애노테이션이 하는 일이 아닐 뿐입니다.
+
+**어떤 검사도 볼 수 없는 것**: 리플렉션 호출, 그리고 라이브러리가 만들지 않은 프록시로 감싸인 객체. 둘 다 포인트컷을 우회하면서 기동 시점에 탐지 가능한 흔적을 남기지 않습니다. 애스펙트가 `@ChannelName` 누락에 대한 자체 런타임 가드를 유지하는 이유입니다.
 
 중첩은 안전합니다. `ChannelContext`가 이전 MDC 값을 저장·복원하므로, 이미 바인딩된 액션 안에서 애노테이션 메서드를 호출해도 반환 후 바깥 액션이 정상 복원됩니다.
 
@@ -599,6 +671,8 @@ catch (RestClientException e) {
 비멱등 호출(예: 결제 승인)은 **이 분류자가 뭘 반환하든 멱등키가 필요합니다.** `UNKNOWN`은 흔하고 피할 수 없는 답이기 때문입니다. `read-timeout-seconds`가 교환 전체 데드라인이라 `timeout`은 "서버는 처리했는데 응답이 늦었다"인 경우가 흔합니다. `tls`가 `UNKNOWN`인 것도 같은 이유입니다 — `SSLException`은 요청이 전달된 뒤 응답을 읽는 중에 발생하는 실패까지 포함합니다.
 
 `NOT_DELIVERED`를 "재시도 안전"으로 읽는 것이 이 API가 가장 유발하기 쉬운 실수입니다. 그건 애초에 다시 실행해도 되는 작업에만 성립합니다.
+
+리다이렉트가 끼면 `NOT_DELIVERED`의 범위는 이름보다 좁습니다. 전송이 리다이렉트를 따르고 `307`/`308`은 원래 메서드와 바디를 그대로 재전송하므로, `dns`·`connect` 실패가 앞선 호스트에 이미 도달한 뒤 다음 홉에서 발생할 수 있습니다. 이 label이 주장하는 것은 "실패한 그 호스트에 전달되지 않았다"이고, 그 전에 도달한 호스트들은 작업을 수행하는 대신 리다이렉트로 응답했다는 뜻입니다. 정상적인 경우엔 맞지만 서버가 규약대로 동작한다는 가정에 기댑니다 — 분류자는 리다이렉트 체인을 볼 수 없습니다.
 
 실제로 값을 하는 자리는 선언적 재시도 설정입니다. `Predicate<Throwable>`는 JDK 타입이라 추가 의존성이 없습니다.
 

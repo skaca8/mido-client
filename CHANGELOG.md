@@ -5,6 +5,63 @@ All notable changes to `mido-client` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2026-08-24
+
+### Added
+
+- **`interceptors:` entries can now name a Spring bean.** Each entry is resolved as a bean name
+  first, falling back to the previous class-name reflection. Interceptors that need dependencies —
+  a `MeterRegistry` for per-supplier latency, a `CircuitBreakerRegistry` — can finally be ordinary
+  beans, and the `static` field / `ApplicationContextHolder` workarounds the README used to
+  recommend are gone.
+
+  The property stays `List<String>` in the same YAML position. Keeping it there is the point: a
+  channel's whole behavior remains visible in one block, and per-endpoint targeting plus list order
+  as execution order are exactly what a `RestClientCustomizer`-style bean would scatter across code.
+
+  Resolution order: a registered bean name; otherwise a loadable class name, using the sole bean of
+  that type if there is exactly one and a reflective instance otherwise; otherwise
+  `IllegalStateException` at startup. Two or more beans of the type falls back to reflection with a
+  warning naming the candidates, so an application that already registers several keeps working.
+
+  **Bean lookup is deferred to the first request, by design.** `getOrCreateClient` is routinely
+  called from a consumer's constructor, so fetching an interceptor bean at build time would force it
+  and its dependencies into existence mid-construction — turning ordinary wiring into a circular
+  reference. The interceptor is wrapped in a delegate that resolves on first `intercept` and caches
+  under double-checked locking. A regression test proves it: a `@Component` that calls
+  `getOrCreateClient` in its constructor, with an interceptor bean that depends on that very
+  component, starts cleanly; making the lookup eager fails that test.
+
+  Startup validation covers what it can without instantiating anything: a bean name is checked with
+  `containsBean` / `getType`, a class name is loaded and inspected. A bean that exists but cannot be
+  *created* still surfaces on first request rather than at startup.
+
+  **Upgrade note:** listing a class name whose class is also registered as a bean now resolves to
+  that bean rather than a separate reflective instance. That is usually the fix you wanted, but it is
+  a behavior change — list a non-bean class to keep the old behavior.
+
+- **Startup warning for a `@ChannelName` class that is not a Spring bean.** The validator could only
+  see bean definitions, so a manually instantiated adapter was never checked at all — its
+  `@ChannelAction` methods are inert and nothing said so. The application's own auto-configuration
+  packages are now scanned for the class-level annotation, and any match without a corresponding bean
+  is reported. Abstract classes and interfaces are skipped, since `@ChannelName` is `@Inherited` and
+  an abstract base declaring the channel can never be a bean. A warning rather than a failure:
+  instantiating such a class deliberately and binding the context by hand is valid.
+
+  Reflective invocations and objects wrapped in a proxy the library did not create remain
+  undetectable at startup, and are now documented as such rather than left implied.
+
+### Changed
+
+- **`FailureType.DNS` and `FailureType.CONNECT` no longer claim the request "never left the
+  client".** Verified against the JDK: `HttpClient` follows redirects for POST as well, and
+  `307`/`308` re-send the original method and body, so a DNS or connect failure can occur on a later
+  hop after an earlier host was already reached. `NOT_DELIVERED` in that case means "not delivered to
+  the host that failed"; every host reached before it answered with a redirect instead of performing
+  the operation. The `Delivery` values are unchanged — that reading holds whenever the server behaves
+  — but the wording overstated it, and the classifier cannot see the redirect chain to know better.
+  Documented in the javadoc and both READMEs.
+
 ## [3.2.1] - 2026-08-21
 
 ### Fixed
@@ -331,6 +388,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Maven Central release. See git history for changes prior to 1.2.0.
 
+[3.3.0]: https://github.com/skaca8/mido-client/compare/v3.2.1...v3.3.0
+[3.2.1]: https://github.com/skaca8/mido-client/compare/v3.2.0...v3.2.1
+[3.2.0]: https://github.com/skaca8/mido-client/compare/v3.1.0...v3.2.0
+[3.1.0]: https://github.com/skaca8/mido-client/compare/v3.0.0...v3.1.0
+[3.0.0]: https://github.com/skaca8/mido-client/compare/v2.0.1...v3.0.0
+[2.0.1]: https://github.com/skaca8/mido-client/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/skaca8/mido-client/compare/v1.3.0...v2.0.0
 [1.3.0]: https://github.com/skaca8/mido-client/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/skaca8/mido-client/compare/v1.1.2...v1.2.0

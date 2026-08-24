@@ -30,7 +30,7 @@ factory classes, no repeated setup code.
   response time
 - **Per-endpoint authentication** — Bearer, Basic, API Key
 - **Smart charset detection** — Content-Type header → UTF-8 validation → channel default fallback
-- **Custom interceptors** — register any `ClientHttpRequestInterceptor` by class name in YAML
+- **Custom interceptors** — register any `ClientHttpRequestInterceptor` in YAML by Spring bean name (dependency injection works) or by class name
 - **Per-channel connection isolation** — every channel/endpoint gets its own `java.net.http.HttpClient`, so one saturated channel cannot starve the others; HTTP/2 included
 - **Per-channel gzip** — opt-in request compression with `min-size` skip threshold; response auto-decompression with decompression-bomb defense cap (`max-decompressed-size`)
 - **Per-channel content type** — pick `json` (default) or `xml` per channel; the request `Content-Type` header is set automatically
@@ -65,7 +65,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:3.2.1'
+    implementation 'com.github.skaca8:mido-client:3.3.0'
 }
 ```
 
@@ -83,7 +83,7 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>3.2.1</version>
+    <version>3.3.0</version>
 </dependency>
 ```
 
@@ -94,7 +94,7 @@ dependencies {
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:3.2.1'
+implementation 'io.github.skaca8:mido-client:3.3.0'
 ```
 
 **Maven**
@@ -104,7 +104,7 @@ implementation 'io.github.skaca8:mido-client:3.2.1'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>3.2.1</version>
+    <version>3.3.0</version>
 </dependency>
 ```
 
@@ -212,7 +212,7 @@ public class PaymentService extends BaseExternalApi {
 | `authorization.type`      | TokenType      | -         | `bearer` / `basic` / `api_key`                                |
 | `authorization.token`     | String         | -         | Authentication token value                                    |
 | `headers`                 | List           | -         | Static headers to attach to every request                     |
-| `interceptors`            | List\<String\> | -         | Fully-qualified class names of `ClientHttpRequestInterceptor` |
+| `interceptors`            | List\<String\> | -         | Spring bean names or fully-qualified class names of `ClientHttpRequestInterceptor`, in execution order |
 | `gzip.request`            | Boolean        | `false`   | Compress outgoing request body (`Content-Encoding: gzip`)     |
 | `gzip.response`           | Boolean        | `false`   | Force `Accept-Encoding: gzip` and auto-decompress response    |
 | `gzip.min-size`           | Integer        | `1024`    | Skip request compression when body is smaller than this (bytes) |
@@ -239,19 +239,64 @@ public class PaymentService extends BaseExternalApi {
 Beyond bean validation, the `MidoClientFactory` bean checks the following at startup, so a typo does not wait for the first request to surface:
 
 - `charset` names an unknown charset → `Invalid charset '<name>' for channel: <channel>`
-- an `interceptors[]` entry cannot be loaded, does not implement `ClientHttpRequestInterceptor`, or has no public no-arg constructor → the message names the channel and endpoint
+- an `interceptors[]` entry is neither a registered bean name nor a loadable class name → the message names the channel and endpoint
+- the entry names a bean whose type does not implement `ClientHttpRequestInterceptor`
+- the entry names a class that does not implement `ClientHttpRequestInterceptor`, or has no public no-arg constructor and no matching bean to use instead
 
-Interceptor classes are loaded and inspected but **not instantiated** during this check, so a constructor with side effects does not run twice.
+Nothing is instantiated during this check. A class name is loaded and inspected; a bean name is checked through `containsBean` / `getType`, so a constructor with side effects does not run twice.
 
 ## Advanced Usage
 
 ### Custom Interceptors
 
-Implement `ClientHttpRequestInterceptor` and register by class name in YAML:
+Implement `ClientHttpRequestInterceptor` and list it under the endpoint. Each entry is a **Spring bean name** or a **fully-qualified class name**, and YAML order is execution order.
+
+```yaml
+mido-client:
+  channels:
+    payment:
+      primary:
+        url: https://api.payment.com
+        interceptors:
+          - paymentMetricsInterceptor            # bean name  → taken from the container
+          - com.example.RequestIdInterceptor     # class name → instantiated reflectively
+```
+
+**Bean names give you dependency injection.** Declare the interceptor as a bean and inject whatever it needs:
 
 ```java
-
 @Component
+public class PaymentMetricsInterceptor implements ClientHttpRequestInterceptor {
+
+    private final MeterRegistry meterRegistry;
+
+    public PaymentMetricsInterceptor(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
+
+    @Override
+    public ClientHttpResponse intercept(HttpRequest request, byte[] body,
+                                        ClientHttpRequestExecution execution) throws IOException {
+        long start = System.nanoTime();
+        try {
+            return execution.execute(request, body);
+        } finally {
+            meterRegistry.timer("payment.latency").record(System.nanoTime() - start, NANOSECONDS);
+        }
+    }
+}
+```
+
+```yaml
+interceptors:
+  - paymentMetricsInterceptor
+```
+
+The `static` field and `ApplicationContextHolder` workarounds earlier versions documented are no longer needed.
+
+**Class names still work exactly as before.** A stateless interceptor needs no bean:
+
+```java
 public class RequestIdInterceptor implements ClientHttpRequestInterceptor {
 
     @Override
@@ -263,27 +308,45 @@ public class RequestIdInterceptor implements ClientHttpRequestInterceptor {
 }
 ```
 
-```yaml
-interceptors:
-  - "com.example.RequestIdInterceptor"
+#### Resolution order
+
+| Entry | Resolved as |
+|---|---|
+| A registered bean name | that bean |
+| A loadable class name with exactly one bean of that type | that bean |
+| A loadable class name with no bean of that type | a reflective instance from the public no-arg constructor |
+| A loadable class name with two or more beans of that type | a reflective instance, plus a warning naming the candidates — reference one by bean name instead |
+| Neither | `IllegalStateException` at startup |
+
+> **Upgrading from 3.2.x:** if you list a class name and that class is *also* registered as a bean, you now get the bean instead of a separate reflective instance. That is usually the fix you wanted — previously the `@Component` you wrote was a different object than the one `mido-client` used — but it is a behavior change. List the class name of a non-bean class to keep the old behavior.
+
+#### Bean lookup is deferred to the first request
+
+Interceptor beans are **not** fetched while the `RestClient` is built. They are resolved on the first request through that client and then cached.
+
+This is a design constraint, not an optimization. `getOrCreateClient` is normally called from a consumer's constructor:
+
+```java
+@Component
+@ChannelName("payment")
+public class PaymentAdapter {
+
+    private final RestClient client;
+
+    public PaymentAdapter(MidoClientFactory factory) {
+        this.client = factory.getOrCreateClient("payment");   // still inside bean creation
+    }
+}
 ```
 
-> Custom interceptors are instantiated via the no-arg public constructor
-> (`Class.forName(...).getDeclaredConstructor().newInstance()`). The resulting instance is **not** a Spring-managed bean,
-> so neither constructor injection nor `@Autowired` field injection works — even if the class is also annotated
-> `@Component`, the bean Spring manages is a *separate* instance that `mido-client` never sees.
->
-> Two patterns are practical today:
->
-> 1. **`static` fields** — best for stateless interceptors (preferred).
-> 2. **`ApplicationContextHolder` escape hatch** — store the `ApplicationContext` in a `static` field at startup and
->    look up beans inside `intercept(...)`. Treat as an escape hatch, not recommended design.
->
-> A first-class "register interceptor by Spring bean name" option is on the roadmap for the next minor release.
->
-> **Fail-fast behavior**: if the class cannot be loaded, has no public no-arg constructor, or does not implement
-> `ClientHttpRequestInterceptor`, the first call to `MidoClientFactory.getOrCreateClient(...)` throws
-> `IllegalStateException` naming the channel and the offending class.
+Pulling an interceptor bean at that moment would force it — and everything it depends on — into existence mid-construction, turning ordinary wiring into a circular reference. Deferring means the lookup happens after the context has finished refreshing, so an interceptor may safely depend on anything, including a bean that itself uses `mido-client`.
+
+Two consequences worth knowing:
+
+- An interceptor bean is not created just because a channel names it. It appears on the first request through that channel (or earlier, if something else in your application already needed it).
+- A misconfiguration that only a full lookup would reveal — a bean that exists but cannot be created — surfaces on that first request, not at startup. Startup still catches a missing bean, a missing class, and a bean of the wrong type.
+
+**Fail-fast behavior**: if an entry is neither a registered bean name nor a loadable class name, if a named bean's type does not implement `ClientHttpRequestInterceptor`, or if a class name neither implements the interface nor has a usable no-arg constructor, the context fails to start with a message naming the channel, the endpoint, and the offending entry.
 
 ### Resilience (Rate Limiter / Circuit Breaker / Retry)
 
@@ -367,14 +430,14 @@ mido-client:
       primary:
         url: https://api.payment.com
         interceptors:
-          - "com.yourapp.interceptor.PaymentResilienceInterceptor"
+          - "com.yourapp.interceptor.PaymentResilienceInterceptor"   # or the bean name, if you declare it as one
 ```
 
 **Tips**:
 
 - Custom interceptors are registered **before** `mido-client`'s logging interceptor, so retry attempts and rate-limit waits show up as separate log entries — useful for debugging cascading failures.
 - Prefer one interceptor class per channel — the decorators' state (open/closed window, retry counters) is keyed by the registry name, so sharing across channels with different SLAs causes cross-talk.
-- For YAML-driven tuning without recompiling, add the `resilience4j-spring-boot3` starter to your app and configure registries in `application.yml`; then look up decorators by channel name inside the interceptor instead of building them as `static final` fields.
+- The `static final` registries above keep the example dependency-free. If you add the `resilience4j-spring-boot3` starter, declare the interceptor as a bean instead, inject `CircuitBreakerRegistry` / `RateLimiterRegistry`, and reference it by bean name — that gives you YAML-driven tuning without recompiling.
 - If you only need one of the three (e.g. rate limiting), drop the unused decorators — chaining only what you need keeps stack traces shallow and behavior predictable.
 
 ### Channel Content Type (JSON / XML)
@@ -520,6 +583,7 @@ implementation 'org.springframework.boot:spring-boot-starter-aop'
 | `@ChannelAction` on a `final` method | **startup failure** — CGLIB cannot override it |
 | An annotated method called from an unannotated method of the same class | **warning**, naming caller and callee |
 | `@ChannelAction` used with no AspectJ runtime on the classpath | **warning** — the annotations do nothing |
+| A class annotated `@ChannelName` in your application's packages that is not a Spring bean | **warning** — its annotations are never advised |
 
 The first three are fatal because the advice provably cannot apply; leaving them as warnings would just be a slower version of the same silent failure.
 
@@ -532,7 +596,9 @@ WARN  @ChannelAction on PaymentAdapter#getStatus is bypassed when called from Pa
       ChannelContext.callWithChannelAction(...).
 ```
 
-What the scan cannot see: classes that are not Spring beans, and reflective or programmatically proxied call paths. The aspect keeps its own runtime guard for the missing-`@ChannelName` case to cover those.
+The non-bean check scans your application's own auto-configuration packages for the class-level `@ChannelName`. Abstract classes and interfaces are skipped: `@ChannelName` is `@Inherited`, so an abstract base declaring the channel is a legitimate pattern and can never be a bean. It is a warning rather than a failure because instantiating such a class deliberately and binding the context by hand is valid — just not what the annotation does.
+
+**What no check can see:** reflective invocations, and objects wrapped in a proxy the library did not create. Both bypass the pointcut without leaving anything detectable at startup. The aspect keeps its own runtime guard for the missing-`@ChannelName` case to cover those paths.
 
 Nesting is safe: `ChannelContext` saves and restores the previous MDC value, so an annotated method called inside another bound action correctly exposes the outer action again once it returns.
 
@@ -609,6 +675,8 @@ catch (RestClientException e) {
 A non-idempotent call — a payment authorization, say — **needs an idempotency key regardless of what this classifier returns**, because `UNKNOWN` is a frequent and unavoidable answer. `read-timeout-seconds` is a whole-exchange deadline, so `timeout` routinely means "the server processed it but the response was too slow". `tls` is `UNKNOWN` for the same reason: `SSLException` also covers failures raised while reading the response, after the request was delivered.
 
 Treating `NOT_DELIVERED` as "safe to retry" is the mistake this API most invites. It holds only for operations that were already safe to re-run.
+
+`NOT_DELIVERED` is also narrower than it sounds once redirects are involved. The transport follows them, and for `307`/`308` it re-sends the original method and body, so a `dns` or `connect` failure can happen on a later hop after an earlier host was already reached. What the label asserts is "not delivered to the host that failed" — every host reached before it answered with a redirect instead of performing the operation. That is the normal case, but it assumes the server behaves; the classifier cannot see the redirect chain.
 
 Where it does pay off is declarative retry configuration, since `Predicate<Throwable>` needs no dependency beyond the JDK:
 
