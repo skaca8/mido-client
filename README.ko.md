@@ -426,14 +426,14 @@ mido-client:
       primary:
         url: https://api.payment.com
         interceptors:
-          - "com.yourapp.interceptor.PaymentResilienceInterceptor"
+          - "com.yourapp.interceptor.PaymentResilienceInterceptor"   # 빈으로 선언했다면 빈 이름도 가능
 ```
 
 **Tips**:
 
 - 커스텀 인터셉터는 `mido-client`의 로깅 인터셉터보다 **먼저** 등록되므로, 재시도 시도와 rate-limit 대기가 별도 로그 엔트리로 찍힘 — 연쇄 장애 디버깅에 유용.
 - 가능하면 채널당 인터셉터 클래스 1개로 유지하세요. 데코레이터 내부 상태(open/closed 윈도우, 재시도 카운터)는 registry name 기준으로 격리되므로, SLA가 다른 채널끼리 공유하면 cross-talk 발생.
-- 재컴파일 없이 YAML로 튜닝하고 싶다면 앱에 `resilience4j-spring-boot3` starter를 추가하고 `application.yml`에 registry 설정. 인터셉터 안에서 `static final` 대신 채널 이름으로 데코레이터를 조회하면 됩니다.
+- 위 예시의 `static final` 레지스트리는 의존성 없이 동작하게 하기 위한 것입니다. `resilience4j-spring-boot3` starter를 추가한다면 인터셉터를 빈으로 선언하고 `CircuitBreakerRegistry` / `RateLimiterRegistry`를 주입한 뒤 빈 이름으로 참조하세요 — 재컴파일 없이 YAML로 튜닝할 수 있습니다.
 - 3개 중 일부만 필요하면(예: rate limiter만) 안 쓰는 데코레이터는 빼세요. 필요한 것만 체이닝하는 게 스택 트레이스도 얕고 동작도 예측 가능.
 
 ### 채널 컨텐트 타입 (JSON / XML)
