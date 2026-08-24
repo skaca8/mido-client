@@ -277,11 +277,11 @@ public class PaymentMetricsInterceptor implements ClientHttpRequestInterceptor {
     @Override
     public ClientHttpResponse intercept(HttpRequest request, byte[] body,
                                         ClientHttpRequestExecution execution) throws IOException {
-        long start = System.nanoTime();
+        Timer.Sample sample = Timer.start(meterRegistry);
         try {
             return execution.execute(request, body);
         } finally {
-            meterRegistry.timer("payment.latency").record(System.nanoTime() - start, NANOSECONDS);
+            sample.stop(meterRegistry.timer("payment.latency"));
         }
     }
 }
