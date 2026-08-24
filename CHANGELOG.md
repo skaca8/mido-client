@@ -274,6 +274,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Unknown Channel` errors now list the configured channel names**, so a typo or casing mistake is
   diagnosable from the message alone.
 
+## [2.0.1] - 2026-07-03
+
+### Fixed
+
+- **Artifact signing is skipped when no signing key is present.** The `signing` block was registered
+  unconditionally, so a build without `SIGNING_KEY` / `SIGNING_PASSWORD` in the environment failed —
+  which is every JitPack build. Signing is now registered only when a key is actually available, so
+  JitPack resolves the artifact unsigned while the Maven Central workflow still signs it.
+
 ## [2.0.0] - 2026-07-02
 
 ### ⚠️ Breaking Changes

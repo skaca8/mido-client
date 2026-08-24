@@ -5,7 +5,7 @@
 
 **[한국어](README.ko.md)** | English
 
-> YAML-driven multi-channel RestClient management for Spring Boot 3.2+
+> YAML-driven multi-channel RestClient management for Spring Boot 3.5+ / Java 25
 
 `mido-client` eliminates boilerplate `RestClient` configuration by letting you define multiple external API channels —
 each with its own URL, auth, timeout, logging, and interceptors — entirely in `application.yml`. No `@Bean` methods, no
@@ -20,7 +20,7 @@ factory classes, no repeated setup code.
 | Dual endpoint per service           | Manual               | Not supported                | Built-in            |
 | Request/response logging            | Manual interceptor   | Plugin required              | Built-in (4 levels) |
 | Client instance caching             | Manual               | Managed by framework         | Built-in            |
-| Based on Spring Boot 3.2 RestClient | Yes                  | No (uses Feign)              | Yes                 |
+| Built on Spring `RestClient`         | Yes                  | No (uses Feign)              | Yes                 |
 
 ## Features
 

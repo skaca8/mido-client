@@ -5,7 +5,7 @@
 
 한국어 | **[English](README.md)**
 
-> Spring Boot 3.2+ 기반의 YAML 설정 멀티채널 RestClient 관리 라이브러리
+> Spring Boot 3.5+ / Java 25 기반의 YAML 설정 멀티채널 RestClient 관리 라이브러리
 
 `mido-client`는 여러 외부 API 채널을 `application.yml`에 선언하는 것만으로 `RestClient`를 자동으로 구성하고 제공합니다. `@Bean` 메서드나 팩토리 클래스 없이, 반복적인
 설정 코드 없이 사용할 수 있습니다.
@@ -19,7 +19,7 @@
 | 채널당 이중 엔드포인트                  | 수동                 | 미지원                | 기본 제공       |
 | 요청/응답 로깅                      | 인터셉터 직접 구현         | 플러그인 필요            | 기본 제공 (4단계) |
 | 클라이언트 인스턴스 캐싱                 | 수동                 | 프레임워크 관리           | 기본 제공       |
-| Spring Boot 3.2 RestClient 기반 | Yes                | No (Feign 사용)      | Yes         |
+| Spring `RestClient` 기반          | Yes                | No (Feign 사용)      | Yes         |
 
 ## 주요 기능
 
