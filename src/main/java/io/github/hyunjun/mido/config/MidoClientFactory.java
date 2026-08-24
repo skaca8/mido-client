@@ -6,8 +6,11 @@ import io.github.hyunjun.mido.constant.LogLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.BufferingClientHttpRequestFactory;
@@ -62,13 +65,28 @@ import java.util.stream.Stream;
  */
 @Slf4j
 @RequiredArgsConstructor
-public class MidoClientFactory implements InitializingBean, DisposableBean {
+public class MidoClientFactory implements InitializingBean, DisposableBean, BeanFactoryAware {
 
     private static final String MIDO_FILE_LOGGER_NAME = "MidoClientFileLog";
 
     private static final String LOGBACK_LOGGER_CLASS = "ch.qos.logback.classic.Logger";
 
     private final MidoClientProperties midoClientProperties;
+
+    /**
+     * Set by the container, so it stays {@code null} when this factory is constructed directly in a
+     * test or a manual wiring. In that case {@code interceptors:} entries are treated as class names
+     * only — the pre-3.3.0 behavior — rather than failing.
+     */
+    private ListableBeanFactory beanFactory;
+
+    @Override
+    public void setBeanFactory(BeanFactory beanFactory) {
+        // ListableBeanFactory가 아니면 이름 조회만 가능한 컨테이너다 — 그때는 클래스명 해석만 지원한다.
+        if (beanFactory instanceof ListableBeanFactory listable) {
+            this.beanFactory = listable;
+        }
+    }
 
     private final Map<String, RestClient> clientCache = new ConcurrentHashMap<>();
 
@@ -232,24 +250,81 @@ public class MidoClientFactory implements InitializingBean, DisposableBean {
         }
     }
 
-    private ClientHttpRequestInterceptor createInterceptor(String className) {
+    /**
+     * Resolves one {@code interceptors:} entry, which may be a Spring bean name or a fully-qualified
+     * class name. Resolution order:
+     *
+     * <ol>
+     *   <li>a registered bean of that name — taken from the container</li>
+     *   <li>otherwise a loadable class: the sole bean of that type if there is exactly one,
+     *       else a reflective instance built from the public no-arg constructor</li>
+     *   <li>otherwise {@link IllegalStateException}</li>
+     * </ol>
+     *
+     * <p>Container lookups are wrapped in {@link LazyInterceptorDelegate} so nothing is pulled from
+     * the context while a consumer bean is still being constructed. Reflective instances are built
+     * immediately, exactly as before — they cannot trigger anything in the container.
+     */
+    private ClientHttpRequestInterceptor createInterceptor(String reference) {
+        if (beanFactory != null && beanFactory.containsBean(reference)) {
+            return lazyBeanByName(reference);
+        }
+
         // 설정 실패는 운영 환경에서 silent skip 대신 fail-fast — 외부 catch에서 채널 이름이 함께 보고된다.
         try {
             // Class.forName(String)은 mido-client를 로드한 클래스로더를 쓴다 — devtools의 RestartClassLoader에
             // 올라간 소비 측 인터셉터를 못 본다. 기본 클래스로더(TCCL 우선)로 조회해야 한다.
-            Class<?> interceptorClass = ClassUtils.forName(className, ClassUtils.getDefaultClassLoader());
+            Class<?> interceptorClass = ClassUtils.forName(reference, ClassUtils.getDefaultClassLoader());
+
+            String uniqueBeanName = findUniqueBeanNameOfType(interceptorClass);
+            if (uniqueBeanName != null) {
+                return lazyBeanByName(uniqueBeanName);
+            }
+
             Object instance = interceptorClass.getDeclaredConstructor().newInstance();
             if (!(instance instanceof ClientHttpRequestInterceptor interceptor)) {
                 throw new IllegalStateException(
-                        "Interceptor class does not implement ClientHttpRequestInterceptor: " + className);
+                        "Interceptor class does not implement ClientHttpRequestInterceptor: " + reference);
             }
-            log.debug("Successfully registered interceptor: {}", className);
+            log.debug("Successfully registered interceptor: {}", reference);
             return interceptor;
         } catch (IllegalStateException e) {
             throw e;
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException("Interceptor '" + reference
+                    + "' is neither a registered bean name nor a loadable class name", e);
         } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("Failed to instantiate interceptor: " + className, e);
+            throw new IllegalStateException("Failed to instantiate interceptor: " + reference, e);
         }
+    }
+
+    private ClientHttpRequestInterceptor lazyBeanByName(String beanName) {
+        log.debug("Interceptor '{}' resolves to a Spring bean; it will be fetched on first request", beanName);
+        return new LazyInterceptorDelegate(beanName,
+                () -> beanFactory.getBean(beanName, ClientHttpRequestInterceptor.class));
+    }
+
+    /**
+     * The single bean name of {@code type}, or {@code null} when there is none or more than one.
+     *
+     * <p>More than one deliberately yields {@code null} rather than an error: before bean resolution
+     * existed, a class name always meant "instantiate reflectively", and an application that happens
+     * to register two beans of that type must keep working. It warns instead, because silently
+     * ignoring two candidate beans is worth noticing.
+     */
+    private String findUniqueBeanNameOfType(Class<?> type) {
+        if (beanFactory == null || !ClientHttpRequestInterceptor.class.isAssignableFrom(type)) return null;
+
+        // allowEagerInit=false — 해석 때문에 빈이 조기 초기화되면 안 된다.
+        String[] beanNames = beanFactory.getBeanNamesForType(type, true, false);
+        if (beanNames.length == 1) return beanNames[0];
+
+        if (beanNames.length > 1) {
+            log.warn("Interceptor '{}' matches {} beans {}, so it is instantiated reflectively as before. "
+                            + "Reference one of them by bean name to use it.",
+                    type.getName(), beanNames.length, Arrays.toString(beanNames));
+        }
+        return null;
     }
 
     private void configureHeaders(HttpHeaders headers, MidoClientProperties.Authorization authorization, List<MidoClientProperties.Header> customHeaders, ContentType contentType) {
@@ -389,20 +464,47 @@ public class MidoClientFactory implements InitializingBean, DisposableBean {
     private void validateInterceptors(String channelName, String endpointName, MidoClientProperties.EndpointConfig endpointConfig) {
         if (endpointConfig == null || endpointConfig.getInterceptors() == null) return;
 
-        for (String className : endpointConfig.getInterceptors()) {
+        for (String reference : endpointConfig.getInterceptors()) {
             try {
-                Class<?> interceptorClass = ClassUtils.forName(className, ClassUtils.getDefaultClassLoader());
-                if (!ClientHttpRequestInterceptor.class.isAssignableFrom(interceptorClass)) {
-                    throw new IllegalStateException(
-                            "Interceptor class does not implement ClientHttpRequestInterceptor: " + className);
-                }
-                interceptorClass.getDeclaredConstructor();
+                validateInterceptorReference(reference);
             } catch (IllegalStateException e) {
                 throw new IllegalStateException(interceptorFailureMessage(channelName, endpointName), e);
             } catch (ReflectiveOperationException e) {
                 throw new IllegalStateException(interceptorFailureMessage(channelName, endpointName),
-                        new IllegalStateException("Failed to load interceptor: " + className, e));
+                        new IllegalStateException("Failed to load interceptor: " + reference, e));
             }
+        }
+    }
+
+    /**
+     * Startup check for one {@code interceptors:} entry. Nothing here instantiates the interceptor:
+     * a class name is loaded and inspected, and a bean name is checked through
+     * {@code containsBean} / {@code getType}.
+     *
+     * <p>{@code getType(name)} can initialize a {@code FactoryBean} in order to determine the type it
+     * produces. That is accepted: it affects only interceptors declared through a {@code FactoryBean},
+     * and the alternative is skipping the check that catches a bean of the wrong type before the first
+     * request rather than during it.
+     */
+    private void validateInterceptorReference(String reference) throws ReflectiveOperationException {
+        if (beanFactory != null && beanFactory.containsBean(reference)) {
+            Class<?> beanType = beanFactory.getType(reference);
+            if (beanType != null && !ClientHttpRequestInterceptor.class.isAssignableFrom(beanType)) {
+                throw new IllegalStateException("Interceptor bean '" + reference + "' is a "
+                        + beanType.getName() + ", which does not implement ClientHttpRequestInterceptor");
+            }
+            return;
+        }
+
+        Class<?> interceptorClass = ClassUtils.forName(reference, ClassUtils.getDefaultClassLoader());
+        if (!ClientHttpRequestInterceptor.class.isAssignableFrom(interceptorClass)) {
+            throw new IllegalStateException(
+                    "Interceptor class does not implement ClientHttpRequestInterceptor: " + reference);
+        }
+
+        // 그 타입의 빈이 유일하게 있으면 그 빈을 쓰게 되므로 무인자 생성자를 요구하지 않는다.
+        if (findUniqueBeanNameOfType(interceptorClass) == null) {
+            interceptorClass.getDeclaredConstructor();
         }
     }
 
