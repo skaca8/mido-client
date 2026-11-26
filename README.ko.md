@@ -5,7 +5,7 @@
 
 한국어 | **[English](README.md)**
 
-> Spring Boot 3.5+ / Java 25 기반의 YAML 설정 멀티채널 RestClient 관리 라이브러리
+> Spring Boot 4.1+ / Java 25 기반의 YAML 설정 멀티채널 RestClient 관리 라이브러리
 
 `mido-client`는 여러 외부 API 채널을 `application.yml`에 선언하는 것만으로 `RestClient`를 자동으로 구성하고 제공합니다. `@Bean` 메서드나 팩토리 클래스 없이, 반복적인
 설정 코드 없이 사용할 수 있습니다.
@@ -41,12 +41,17 @@
 | 항목          | 버전                       |
 |-------------|--------------------------|
 | Java        | 25                       |
-| Spring Boot | 3.5.x (3.5.16으로 빌드·검증)   |
+| Spring Boot | 4.1.x+ (4.1.3으로 빌드·검증, 4.2.0 확인) |
 | Gradle      | 8.14.4                   |
 
 > `ChannelContext`가 정식 `java.lang.ScopedValue` API(JEP 506, Java 25) 기반이므로 Java 25가 필요합니다.
-> 클래스패스 스캐닝(ASM)이 Java 25 바이트코드를 읽을 수 있는 Spring Framework 6.2 릴리즈가 필요합니다(최신 6.2.x 패치,
-> Spring Boot 3.2.x는 불가). 이 라이브러리는 Spring Boot 3.5.16으로 빌드·검증되었습니다.
+> Spring Boot 4(Spring Framework 7) 전용입니다. Framework 7의 `HttpHeaders`가 더 이상 `Map`을 구현하지 않아 Boot 3·4 빌드 jar는
+> 바이너리 호환되지 않습니다. Spring Boot 3.5는 mido-client 3.x를 계속 사용하세요.
+>
+> ⚠️ **Boot 4는 Jackson 3입니다.** JSON 본문은 Jackson 3(`tools.jackson`)으로 (역)직렬화됩니다. `com.fasterxml.jackson.annotation`
+> 애노테이션(`@JsonProperty`, `@JsonIgnore` 등)은 그대로 동작하지만, Jackson 2 databind 애노테이션
+> (`com.fasterxml.jackson.databind.annotation`의 `@JsonSerialize`·`@JsonDeserialize`·`@JsonNaming` 등)은 **에러 없이 무시**되어
+> 값만 틀리게 들어옵니다. 업그레이드 전에 DTO에서 `com.fasterxml.jackson.databind`를 grep 하세요.
 
 ## 빠른 시작
 
@@ -562,10 +567,10 @@ public class PaymentAdapter {
 
 두 축을 분리한 것은 의도적입니다. 채널은 클래스의 속성(*어느* 외부 시스템)이고 액션은 메서드의 속성(*무슨* 호출)입니다. 애노테이션 하나가 둘을 겸하면 메서드마다 채널이 갈릴 수 있어 "클래스 = 채널" 불변식이 깨집니다. 진짜 채널 2개를 쓰는 클래스는 둘로 쪼개세요 — 메서드 레벨 채널 오버라이드는 제공하지 않습니다.
 
-**AOP 런타임은 소비 측이 넣어야 합니다.** mido-client는 aspectjweaver를 `compileOnly`로 두므로, 애플리케이션에 `spring-boot-starter-aop`(Boot 3)를 추가해야 애스펙트가 활성화됩니다. 없으면 애노테이션은 무동작이고 나머지는 그대로입니다.
+**AOP 런타임은 소비 측이 넣어야 합니다.** mido-client는 aspectjweaver를 `compileOnly`로 두므로, 애플리케이션에 `spring-boot-starter-aspectj`(Boot 4에서 `spring-boot-starter-aop`가 이름 변경됨)를 추가해야 애스펙트가 활성화됩니다. 없으면 애노테이션은 무동작이고 나머지는 그대로입니다.
 
 ```gradle
-implementation 'org.springframework.boot:spring-boot-starter-aop'
+implementation 'org.springframework.boot:spring-boot-starter-aspectj'
 ```
 
 ⚠️ **프록시 기반이라 알려진 한계가 있습니다.** 어드바이스는 Spring 프록시를 통한 외부 호출에서만 동작합니다. 같은 빈의 다른 메서드에서의 호출(self-invocation), `private`/`static`/`final` 메서드, Spring 빈이 아닌 객체에는 **적용되지 않습니다.** 이 경우 액션이 바인딩되지 않고 로그에 `unknown`이 찍힙니다 — 애노테이션이 붙어 있다는 게 적용되었다는 증거가 아닙니다.
@@ -605,7 +610,7 @@ WARN  @ChannelAction on PaymentAdapter#getStatus is bypassed when called from Pa
 | | `@ChannelAction` | `BaseExternalApi` / `ChannelContext` |
 |---|---|---|
 | 보일러플레이트 | 없음 | 호출당 람다 하나 |
-| `spring-boot-starter-aop` 필요 | 필요 | 불필요 |
+| `spring-boot-starter-aspectj` 필요 | 필요 | 불필요 |
 | self-invocation, `private`/`final`, 비빈에서 동작 | 안 됨 | 됨 |
 | 바인딩 누락이 코드에서 보이는지 | 안 보이지만 기동 시 잡힘 | 보임 |
 

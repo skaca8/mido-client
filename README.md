@@ -5,7 +5,7 @@
 
 **[한국어](README.ko.md)** | English
 
-> YAML-driven multi-channel RestClient management for Spring Boot 3.5+ / Java 25
+> YAML-driven multi-channel RestClient management for Spring Boot 4.1+ / Java 25
 
 `mido-client` eliminates boilerplate `RestClient` configuration by letting you define multiple external API channels —
 each with its own URL, auth, timeout, logging, and interceptors — entirely in `application.yml`. No `@Bean` methods, no
@@ -44,12 +44,17 @@ factory classes, no repeated setup code.
 | Requirement | Version                            |
 |-------------|------------------------------------|
 | Java        | 25                                 |
-| Spring Boot | 3.5.x (built & tested with 3.5.16) |
+| Spring Boot | 4.1.x+ (built & tested with 4.1.3; also verified on 4.2.0) |
 | Gradle      | 8.14.4                             |
 
 > Java 25 is required because `ChannelContext` is built on the final `java.lang.ScopedValue` API (JEP 506, Java 25).
-> Consumers need a Spring Framework 6.2 release whose bundled ASM can read Java 25 bytecode (recent 6.2.x patches;
-> Spring Boot 3.2.x cannot). This library is built and tested against Spring Boot 3.5.16.
+> Spring Boot 4 (Spring Framework 7) only: Framework 7's `HttpHeaders` no longer implements `Map`, so jars built
+> against Boot 3 and Boot 4 are not binary-compatible. Stay on mido-client 3.x for Spring Boot 3.5.
+>
+> ⚠️ **Jackson 3 on Boot 4.** JSON bodies are now (de)serialized by Jackson 3 (`tools.jackson`). Annotations from
+> `com.fasterxml.jackson.annotation` (`@JsonProperty`, `@JsonIgnore`, …) still work, but Jackson 2 databind annotations
+> (`com.fasterxml.jackson.databind.annotation.@JsonSerialize` / `@JsonDeserialize` / `@JsonNaming`, …) are **silently
+> ignored** — no error, just wrong values. Grep your DTOs for `com.fasterxml.jackson.databind` before upgrading.
 
 ## Quick Start
 
@@ -566,10 +571,10 @@ public class PaymentAdapter {
 
 The two axes are split on purpose: the channel is a property of the class (*which* external system), the action a property of the method (*what* call). One annotation carrying both would let the channel vary per method and break the "one class = one channel" invariant. A class that genuinely talks to two channels should be split in two — there is no method-level channel override.
 
-**Requires an AOP runtime you provide.** mido-client declares aspectjweaver as `compileOnly`, so add `spring-boot-starter-aop` (Boot 3) to your application to activate the aspect. Without it the annotations are inert and nothing else changes.
+**Requires an AOP runtime you provide.** mido-client declares aspectjweaver as `compileOnly`, so add `spring-boot-starter-aspectj` (renamed from `spring-boot-starter-aop` in Boot 4) to your application to activate the aspect. Without it the annotations are inert and nothing else changes.
 
 ```gradle
-implementation 'org.springframework.boot:spring-boot-starter-aop'
+implementation 'org.springframework.boot:spring-boot-starter-aspectj'
 ```
 
 ⚠️ **Proxy-based, with the usual limits.** The advice runs only on external calls through the Spring proxy. It does **not** apply to a call from another method of the same bean (self-invocation), to `private` / `static` / `final` methods, or to objects that are not Spring beans. In those cases the action is simply not bound and the log shows `unknown` — the annotation being present is not proof that it took effect.
@@ -609,7 +614,7 @@ The aspect runs at `Ordered.HIGHEST_PRECEDENCE + 100`, outside `@Transactional`,
 | | `@ChannelAction` | `BaseExternalApi` / `ChannelContext` |
 |---|---|---|
 | Boilerplate | None | A lambda per call |
-| Needs `spring-boot-starter-aop` | Yes | No |
+| Needs `spring-boot-starter-aspectj` | Yes | No |
 | Works on self-invocation, `private`/`final`, non-beans | No | Yes |
 | Missing binding is visible in code | No, but caught at startup | Yes |
 

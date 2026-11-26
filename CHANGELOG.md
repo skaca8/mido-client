@@ -5,6 +5,31 @@ All notable changes to `mido-client` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Spring Boot baseline raised to 4.1.x** (Spring Framework 7.0); the library is built and tested
+  against Spring Boot 4.1.3, and the resulting jar was also verified on Spring Boot 4.2.0. **Breaking:**
+  Spring Boot 3.5 consumers must stay on 3.x. A jar built against Boot 3.5 fails on Boot 4 with
+  `IncompatibleClassChangeError` in gzip response decompression, because Framework 7's `HttpHeaders`
+  no longer implements `Map`; rebuilding against Framework 7 is the fix.
+- Message converters are configured through `RestClient.Builder.configureMessageConverters`, replacing
+  `messageConverters(Consumer)` that Framework 7 deprecates for removal. The resulting converter list is
+  unchanged: defaults, with the charset-aware `StringHttpMessageConverter` placed first.
+- `@ChannelAction` docs and the startup warning now name `spring-boot-starter-aspectj`, Boot 4's
+  rename of `spring-boot-starter-aop`.
+- **JSON is handled by Jackson 3 on Boot 4.** `com.fasterxml.jackson.annotation` annotations keep
+  working, but Jackson 2 databind annotations (`@JsonSerialize`, `@JsonDeserialize`, `@JsonNaming`, …)
+  are silently ignored — verified: a `@JsonDeserialize` that applied on 3.3.0 is skipped with no error.
+  Grep DTOs for `com.fasterxml.jackson.databind` before upgrading.
+
+### Removed
+
+- The `com.fasterxml.jackson.core:jackson-databind` (Jackson 2) dependency. The library never used it,
+  and on Boot 4 it only dragged a second, unused Jackson onto consumers' classpaths. Applications that
+  relied on it transitively must now declare it themselves.
+
 ## [3.3.0] - 2026-08-24
 
 ### Added

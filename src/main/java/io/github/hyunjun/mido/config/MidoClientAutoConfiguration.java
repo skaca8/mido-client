@@ -56,7 +56,7 @@ public class MidoClientAutoConfiguration {
 
     /**
      * Registers {@link ChannelActionAspect} only when an AspectJ runtime is on the classpath (for
-     * example via {@code spring-boot-starter-aop}). mido-client declares aspectjweaver as
+     * example via {@code spring-boot-starter-aspectj}). mido-client declares aspectjweaver as
      * {@code compileOnly}, so a consumer that does not want AOP is not forced to pull it in — the
      * {@code @ChannelAction} annotation is then simply inert and the explicit
      * {@code ChannelContext} / {@code BaseExternalApi} paths keep working unchanged.

@@ -6,15 +6,21 @@ import io.github.hyunjun.mido.constant.LogLevel;
 import io.github.hyunjun.mido.constant.TokenType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
+import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -574,6 +580,95 @@ class MidoClientFactoryTest {
 
         // Then - destroy가 정리할 HttpClient가 채널 수만큼 추적된다
         assertThat(factory.trackedHttpClientCount()).isEqualTo(2);
+    }
+
+    @Test
+    void shouldWriteJsonStringBodyAsIs() {
+        // Given - String 컨버터가 Jackson보다 앞서야 JSON 문자열이 따옴표로 다시 감싸지지 않는다.
+        // charset 없는 application/json은 StringHttpMessageConverter가 항상 UTF-8로 쓴다(채널 charset 무관).
+        RestClient.Builder builder = converterTestBuilder(StandardCharsets.UTF_8, ContentType.JSON);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        RestClient client = builder.build();
+        String body = "{\"name\":\"한글\"}";
+
+        server.expect(requestTo("https://converter.test.com/string"))
+                .andExpect(content().bytes(body.getBytes(StandardCharsets.UTF_8)))
+                .andRespond(withSuccess());
+
+        // When
+        client.post().uri("/string").body(body).retrieve().toBodilessEntity();
+
+        // Then
+        server.verify();
+    }
+
+    @Test
+    void shouldWriteXmlStringBodyWithChannelCharset() {
+        // Given
+        Charset eucKr = Charset.forName("EUC-KR");
+        RestClient.Builder builder = converterTestBuilder(eucKr, ContentType.XML);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        RestClient client = builder.build();
+        String body = "<name>한글</name>";
+
+        server.expect(requestTo("https://converter.test.com/xml"))
+                .andExpect(content().bytes(body.getBytes(eucKr)))
+                .andRespond(withSuccess());
+
+        // When
+        client.post().uri("/xml").body(body).retrieve().toBodilessEntity();
+
+        // Then
+        server.verify();
+    }
+
+    @Test
+    void shouldKeepResourceConverterForFileDownload() throws IOException {
+        // Given - String 컨버터만 교체하고 Resource 컨버터는 기본 목록에 남아 있어야 한다
+        byte[] file = {0x00, 0x01, (byte) 0xFF};
+        RestClient.Builder builder = converterTestBuilder(StandardCharsets.UTF_8, ContentType.JSON);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        RestClient client = builder.build();
+
+        server.expect(requestTo("https://converter.test.com/resource"))
+                .andRespond(withSuccess(file, MediaType.APPLICATION_OCTET_STREAM));
+
+        // When
+        Resource resource = client.get().uri("/resource").retrieve().body(Resource.class);
+
+        // Then
+        assertThat(resource).isNotNull();
+        assertThat(resource.getContentAsByteArray()).isEqualTo(file);
+        server.verify();
+    }
+
+    @Test
+    void shouldKeepDefaultFormConverter() {
+        // Given
+        RestClient.Builder builder = converterTestBuilder(StandardCharsets.UTF_8, ContentType.JSON);
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        RestClient client = builder.build();
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("a", "1");
+
+        server.expect(requestTo("https://converter.test.com/form"))
+                .andExpect(content().formData(form))
+                .andRespond(withSuccess());
+
+        // When
+        client.post().uri("/form").contentType(MediaType.APPLICATION_FORM_URLENCODED).body(form)
+                .retrieve().toBodilessEntity();
+
+        // Then
+        server.verify();
+    }
+
+    private RestClient.Builder converterTestBuilder(Charset charset, ContentType contentType) {
+        String url = "https://converter.test.com";
+        MidoClientProperties.EndpointConfig endpoint = new MidoClientProperties.EndpointConfig();
+        endpoint.setUrl(url);
+        endpoint.setLog(LogLevel.OFF);
+        return factory.baseRestClient(url, endpoint, charset, contentType);
     }
 
     public static class NotAnInterceptor {

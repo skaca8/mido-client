@@ -25,7 +25,7 @@ import java.lang.annotation.Target;
  * }</pre>
  *
  * <p>Requires an AOP runtime on the consumer's classpath (for example
- * {@code spring-boot-starter-aop}). Without one the annotation is silently inert — mido-client does
+ * {@code spring-boot-starter-aspectj}). Without one the annotation is silently inert — mido-client does
  * not declare aspectjweaver as a dependency.
  *
  * <p><strong>Proxy-based, with the usual limits.</strong> The advice only runs on external calls
