@@ -5,6 +5,14 @@ All notable changes to `mido-client` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Interceptors are annotated with JSpecify `@NullMarked` / `@Nullable` to match Spring Framework 7's
+  null-safety contracts, replacing `lombok.NonNull`. That Lombok annotation was also generating a
+  runtime null check on `intercept()`'s `body`; it is gone, since Framework 7 declares `body` non-null.
+
 ## [4.0.0] - 2026-11-26
 
 ### Changed

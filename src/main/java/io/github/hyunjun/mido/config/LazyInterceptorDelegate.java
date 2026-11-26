@@ -1,7 +1,8 @@
 package io.github.hyunjun.mido.config;
 
-import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.client.ClientHttpRequestExecution;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
@@ -30,18 +31,19 @@ import java.util.function.Supplier;
  * <p>The resolved delegate is cached under double-checked locking on a {@code volatile} field: a
  * {@code RestClient} is shared across threads, so several may reach the first request at once.
  */
+@NullMarked
 @RequiredArgsConstructor
 final class LazyInterceptorDelegate implements ClientHttpRequestInterceptor {
 
     /** Bean name or class name as written in YAML; used only for diagnostics. */
     private final String reference;
 
-    private final Supplier<ClientHttpRequestInterceptor> resolver;
+    private final Supplier<? extends @Nullable ClientHttpRequestInterceptor> resolver;
 
-    private volatile ClientHttpRequestInterceptor delegate;
+    private volatile @Nullable ClientHttpRequestInterceptor delegate;
 
     @Override
-    public ClientHttpResponse intercept(HttpRequest request, byte @NonNull [] body,
+    public ClientHttpResponse intercept(HttpRequest request, byte[] body,
                                         ClientHttpRequestExecution execution) throws IOException {
         return resolve().intercept(request, body, execution);
     }
@@ -51,10 +53,12 @@ final class LazyInterceptorDelegate implements ClientHttpRequestInterceptor {
         if (resolved != null) return resolved;
 
         synchronized (this) {
-            if (delegate == null) {
-                delegate = requireResolved();
+            resolved = delegate;
+            if (resolved == null) {
+                resolved = requireResolved();
+                delegate = resolved;
             }
-            return delegate;
+            return resolved;
         }
     }
 

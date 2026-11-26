@@ -8,6 +8,7 @@ import io.github.hyunjun.mido.constant.ContentType;
 import io.github.hyunjun.mido.constant.LogLevel;
 import io.github.hyunjun.mido.constant.TokenType;
 import org.junit.jupiter.api.Test;
+import org.jspecify.annotations.NullMarked;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -436,6 +437,7 @@ class MidoClientAutoConfigurationTest {
         }
     }
 
+    @NullMarked
     public static class CountingInterceptor implements ClientHttpRequestInterceptor {
 
         static int instantiations = 0;

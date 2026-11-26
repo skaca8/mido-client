@@ -2,6 +2,7 @@ package io.github.hyunjun.mido.config;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.jspecify.annotations.NullMarked;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -227,6 +228,7 @@ class InterceptorBeanResolutionTest {
         };
     }
 
+    @NullMarked
     static class HeaderInterceptor implements ClientHttpRequestInterceptor {
         @Override
         public ClientHttpResponse intercept(HttpRequest request, byte[] body,
@@ -238,6 +240,7 @@ class InterceptorBeanResolutionTest {
     }
 
     /** 빈이 아닌, 무인자 생성자를 가진 클래스 — 종전 리플렉션 경로. */
+    @NullMarked
     public static class StatelessFqcnInterceptor implements ClientHttpRequestInterceptor {
 
         static int instantiations = 0;
@@ -254,6 +257,7 @@ class InterceptorBeanResolutionTest {
     }
 
     /** 의존성을 가진 인터셉터 — 무인자 생성자가 없으므로 빈으로만 해석될 수 있다. */
+    @NullMarked
     static class DependentInterceptor implements ClientHttpRequestInterceptor {
 
         static boolean instantiated = false;

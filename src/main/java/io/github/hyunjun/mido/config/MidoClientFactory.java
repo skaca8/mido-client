@@ -5,6 +5,7 @@ import io.github.hyunjun.mido.constant.EndpointType;
 import io.github.hyunjun.mido.constant.LogLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
@@ -81,7 +82,7 @@ public class MidoClientFactory implements InitializingBean, DisposableBean, Bean
     private ListableBeanFactory beanFactory;
 
     @Override
-    public void setBeanFactory(BeanFactory beanFactory) {
+    public void setBeanFactory(@NonNull BeanFactory beanFactory) {
         // ListableBeanFactory가 아니면 이름 조회만 가능한 컨테이너다 — 그때는 클래스명 해석만 지원한다.
         if (beanFactory instanceof ListableBeanFactory listable) {
             this.beanFactory = listable;

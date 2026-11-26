@@ -6,6 +6,7 @@ import io.github.hyunjun.mido.constant.LogLevel;
 import io.github.hyunjun.mido.constant.TokenType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.jspecify.annotations.NullMarked;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -677,6 +678,7 @@ class MidoClientFactoryTest {
         }
     }
 
+    @NullMarked
     public static class InterceptorWithoutNoArgCtor
             implements org.springframework.http.client.ClientHttpRequestInterceptor {
 
