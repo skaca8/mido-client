@@ -1,7 +1,7 @@
 package io.github.hyunjun.mido.config;
 
-import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.NullMarked;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.client.ClientHttpRequestExecution;
@@ -17,6 +17,7 @@ import java.util.zip.GZIPOutputStream;
  * the endpoint and the body meets the minimum size threshold. Not part of the public API —
  * visibility may be reduced in a future minor release.
  */
+@NullMarked
 @RequiredArgsConstructor
 @SuppressWarnings("ClassCanBeRecord")
 public class MidoGzipRequestInterceptor implements ClientHttpRequestInterceptor {
@@ -24,7 +25,7 @@ public class MidoGzipRequestInterceptor implements ClientHttpRequestInterceptor 
     private final int minSize;
 
     @Override
-    public ClientHttpResponse intercept(HttpRequest request, byte @NonNull [] body, ClientHttpRequestExecution execution) throws IOException {
+    public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution) throws IOException {
         // body.length == 0은 minSize와 무관하게 건너뛴다. min-size: 0이면 body 없는 GET에도
         // Content-Encoding: gzip과 20바이트 gzip 헤더가 붙는다.
         if (body.length == 0 || body.length < minSize) {

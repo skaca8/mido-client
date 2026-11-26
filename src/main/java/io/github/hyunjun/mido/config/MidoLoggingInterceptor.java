@@ -3,9 +3,10 @@ package io.github.hyunjun.mido.config;
 import io.github.hyunjun.mido.constant.FailureType;
 import io.github.hyunjun.mido.constant.LogLevel;
 import io.github.hyunjun.mido.context.ChannelContext;
-import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -34,6 +35,7 @@ import java.util.function.Consumer;
  * {@link MidoClientFactory} according to the configured {@link io.github.hyunjun.mido.constant.LogLevel}.
  * Not part of the public API — visibility may be reduced in a future minor release.
  */
+@NullMarked
 @Slf4j
 @RequiredArgsConstructor
 @SuppressWarnings("ClassCanBeRecord")
@@ -49,7 +51,7 @@ public class MidoLoggingInterceptor implements ClientHttpRequestInterceptor {
     private static final String OMITTED_BODY = "(omitted)";
 
     @Override
-    public ClientHttpResponse intercept(HttpRequest request, byte @NonNull [] body, ClientHttpRequestExecution execution) throws IOException {
+    public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution) throws IOException {
         long startTime = System.currentTimeMillis();
         logRequest(request, body, logLevel);
 
@@ -148,7 +150,7 @@ public class MidoLoggingInterceptor implements ClientHttpRequestInterceptor {
         }
     }
 
-    private Charset getCharsetFromContentType(HttpHeaders headers) {
+    private @Nullable Charset getCharsetFromContentType(HttpHeaders headers) {
         return Optional.ofNullable(headers.getContentType())
                 .map(MediaType::getCharset)
                 .orElse(null);
@@ -156,7 +158,7 @@ public class MidoLoggingInterceptor implements ClientHttpRequestInterceptor {
 
     private String resolveRequestBody(HttpRequest request, byte[] body) {
         if (!logBody) return OMITTED_BODY;
-        if (body == null || body.length == 0) return "";
+        if (body.length == 0) return "";
 
         int limit = bodyLimit(body.length);
         return new String(body, 0, limit, resolveRequestCharset(request))
@@ -205,7 +207,7 @@ public class MidoLoggingInterceptor implements ClientHttpRequestInterceptor {
      * parsing log text: 5xx as {@code error}, 4xx as {@code warn}, everything else as {@code info}.
      * {@link LogLevel} stays what it has always been — the destination, not the severity.
      */
-    private void emitByStatus(LogLevel effectiveLogLevel, HttpStatusCode status, String format, Object... args) {
+    private void emitByStatus(LogLevel effectiveLogLevel, @Nullable HttpStatusCode status, String format, Object... args) {
         // status가 null인 커스텀 응답 구현이라도 로그 라인 자체를 잃지 않도록 info로 떨어뜨린다.
         if (status != null && status.is5xxServerError()) {
             forEachTarget(effectiveLogLevel, logger -> logger.error(format, args));

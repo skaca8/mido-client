@@ -1,7 +1,8 @@
 package io.github.hyunjun.mido.config;
 
-import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.HttpStatusCode;
@@ -22,6 +23,7 @@ import java.util.zip.GZIPInputStream;
  * {@code gzip.max-decompressed-size} to defend against decompression bombs. Not part of the public
  * API — visibility may be reduced in a future minor release.
  */
+@NullMarked
 @RequiredArgsConstructor
 @SuppressWarnings("ClassCanBeRecord")
 public class MidoGzipResponseInterceptor implements ClientHttpRequestInterceptor {
@@ -31,7 +33,7 @@ public class MidoGzipResponseInterceptor implements ClientHttpRequestInterceptor
     private final int maxDecompressedSize;
 
     @Override
-    public ClientHttpResponse intercept(HttpRequest request, byte @NonNull [] body, ClientHttpRequestExecution execution) throws IOException {
+    public ClientHttpResponse intercept(HttpRequest request, byte[] body, ClientHttpRequestExecution execution) throws IOException {
         request.getHeaders().set(HttpHeaders.ACCEPT_ENCODING, "gzip");
 
         ClientHttpResponse response = execution.execute(request, body);
@@ -48,7 +50,7 @@ public class MidoGzipResponseInterceptor implements ClientHttpRequestInterceptor
         private final ClientHttpResponse delegate;
         private final HttpHeaders headers;
         private final int maxDecompressedSize;
-        private byte[] decompressedBytes;
+        private byte @Nullable [] decompressedBytes;
 
         GzipDecompressingResponse(ClientHttpResponse delegate, int maxDecompressedSize) {
             this.delegate = delegate;
@@ -60,7 +62,6 @@ public class MidoGzipResponseInterceptor implements ClientHttpRequestInterceptor
         }
 
         @Override
-        @NonNull
         public InputStream getBody() throws IOException {
             // BufferingClientHttpRequestFactory 계약상 getBody()는 다중 호출 가능해야 한다.
             // 압축 해제는 1회만 수행하고 매 호출마다 신선한 ByteArrayInputStream을 반환한다.
@@ -89,19 +90,16 @@ public class MidoGzipResponseInterceptor implements ClientHttpRequestInterceptor
         }
 
         @Override
-        @NonNull
         public HttpHeaders getHeaders() {
             return headers;
         }
 
         @Override
-        @NonNull
         public HttpStatusCode getStatusCode() throws IOException {
             return delegate.getStatusCode();
         }
 
         @Override
-        @NonNull
         public String getStatusText() throws IOException {
             return delegate.getStatusText();
         }
