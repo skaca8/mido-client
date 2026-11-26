@@ -58,7 +58,7 @@ public class ChannelActionValidator implements SmartInitializingSingleton {
 
         if (!ClassUtils.isPresent(ASPECTJ_MARKER_CLASS, ClassUtils.getDefaultClassLoader())) {
             log.warn("@ChannelAction is used on {} class(es) but no AspectJ runtime is on the classpath, "
-                            + "so the annotations do nothing. Add spring-boot-starter-aop, or bind the context "
+                            + "so the annotations do nothing. Add spring-boot-starter-aspectj, or bind the context "
                             + "explicitly with ChannelContext / BaseExternalApi.",
                     annotatedClasses.size());
             return;

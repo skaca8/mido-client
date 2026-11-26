@@ -132,7 +132,7 @@ class ChannelActionValidatorTest {
                     assertThat(warnings())
                             .anySatisfy(message -> assertThat(message)
                                     .contains("no AspectJ runtime")
-                                    .contains("spring-boot-starter-aop"));
+                                    .contains("spring-boot-starter-aspectj"));
                 });
     }
 

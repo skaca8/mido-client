@@ -126,7 +126,8 @@ public class MidoClientFactory implements InitializingBean, DisposableBean, Bean
         return RestClient.builder()
                 .baseUrl(baseUrl)
                 .requestFactory(requestFactory)
-                .messageConverters(converters -> configureMessageConverters(converters, charset))
+                .configureMessageConverters(builder -> builder.registerDefaults()
+                        .configureMessageConvertersList(converters -> configureMessageConverters(converters, charset)))
                 .defaultHeaders(headers -> configureHeaders(headers, endpointConfig.getAuthorization(), endpointConfig.getHeaders(), contentType))
                 .requestInterceptors(interceptors -> interceptors.addAll(createInterceptors(
                         endpointConfig.getInterceptors(),
