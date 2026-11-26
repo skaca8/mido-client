@@ -67,7 +67,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.skaca8:mido-client:3.3.0'
+    implementation 'com.github.skaca8:mido-client:4.0.0'
 }
 ```
 
@@ -85,7 +85,7 @@ dependencies {
 <dependency>
     <groupId>com.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>3.3.0</version>
+    <version>4.0.0</version>
 </dependency>
 ```
 
@@ -96,7 +96,7 @@ dependencies {
 **Gradle**
 
 ```gradle
-implementation 'io.github.skaca8:mido-client:3.3.0'
+implementation 'io.github.skaca8:mido-client:4.0.0'
 ```
 
 **Maven**
@@ -106,7 +106,7 @@ implementation 'io.github.skaca8:mido-client:3.3.0'
 <dependency>
     <groupId>io.github.skaca8</groupId>
     <artifactId>mido-client</artifactId>
-    <version>3.3.0</version>
+    <version>4.0.0</version>
 </dependency>
 ```
 
